@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Report #{{ exp.id }} — AHLC{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">AHLC Compression Report</h1>
+    <p class="page-sub">Experiment #{{ exp.id }} · {{ exp.filename }} · {{ exp.created_at[:16] }}</p>
+  </div>
+  <div class="header-actions">
+    <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-ghost">← Back to Result</a>
+    <a href="{{ url_for('download_compressed', exp_id=exp.id) }}" class="btn btn-primary">Download AHMC</a>
+  </div>
+</div>
+
+<div class="report-body">
+
+  <!-- 1. Input Information -->
+  <section class="report-section">
+    <div class="report-section-num">01</div>
+    <div class="report-section-body">
+      <h2>Input Information</h2>
+      <div class="info-rows">
+        <div class="info-row"><span>Filename</span><span class="mono">{{ exp.filename }}</span></div>
+        <div class="info-row"><span>Media type</span><span>{{ exp.media_type|upper }}</span></div>
+        <div class="info-row"><span>Original file size</span><span>{{ fmt_bytes(exp.original_size) }} ({{ exp.original_size }} bytes)</span></div>
+        {% if exp.media_type == 'image' %}
+        <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} pixels</span></div>
+        <div class="info-row"><span>Colour depth</span><span>{{ exp.bpp }} bits per pixel</span></div>
+        {% else %}
+        <div class="info-row"><span>Channels</span><span>{{ exp.channels }}</span></div>
+        <div class="info-row"><span>Sample rate</span><span>{{ exp.sample_rate }} Hz</span></div>
+        <div class="info-row"><span>Bit depth</span><span>{{ exp.bits_per_sample }}-bit PCM</span></div>
+        {% if exp.duration_seconds %}<div class="info-row"><span>Duration</span><span>{{ "%.3f"|format(exp.duration_seconds) }} s</span></div>{% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Content Analysis -->
+  <section class="report-section">
+    <div class="report-section-num">02</div>
+    <div class="report-section-body">
+      <h2>Content Analysis</h2>
+      <div class="info-rows">
+        <div class="info-row"><span>Shannon entropy (raw)</span>
+          <span class="mono">{{ "%.6f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
+        <div class="info-row"><span>Maximum possible entropy</span><span class="mono">8.000000 bits/byte</span></div>
+        <div class="info-row"><span>Theoretical entropy ratio</span>
+          <span class="mono">{{ "%.1f"|format((exp.original_entropy or 0)/8*100) }}% of maximum</span></div>
+      </div>
+      <p class="report-note">
+        Higher entropy indicates more uniform byte distribution and less compressibility.
+        The predictor is applied before entropy coding to decorrelate the data.
+      </p>
+    </div>
+  </section>
+
+  <!-- 3. Prediction Stage -->
+  <section class="report-section">
+    <div class="report-section-num">03</div>
+    <div class="report-section-body">
+      <h2>Prediction Stage</h2>
+      <div class="info-rows">
+        <div class="info-row"><span>Predictor type</span>
+          <span>{{ "Left-neighbour (per channel byte)" if exp.media_type == 'image' else "Delta (previous sample, per channel)" }}</span></div>
+        <div class="info-row"><span>Predictor ID</span>
+          <span class="mono">{{ (exp.predictor or '—')|upper }}</span></div>
+      </div>
+      <p class="report-note">
+        {% if exp.media_type == 'image' %}
+        The spatial predictor estimates each channel byte as the same channel byte of the left pixel.
+        For pixels in column 0, the prediction is 0. Subtracting the prediction from the actual value
+        yields a residual with lower statistical entropy in smooth image regions.
+        {% else %}
+        The delta predictor estimates each sample as the previous sample in the same channel.
+        De-interleaved channel residuals are then encoded independently. This removes inter-sample
+        correlation in smooth audio signals, concentrating probability mass near zero.
+        {% endif %}
+      </p>
+    </div>
+  </section>
+
+  <!-- 4. Residual Analysis -->
+  <section class="report-section">
+    <div class="report-section-num">04</div>
+    <div class="report-section-body">
+      <h2>Residual Analysis</h2>
+      {% set reduction = (exp.original_entropy or 0) - (exp.residual_entropy or 0) %}
+      {% set reduction_pct = (reduction / (exp.original_entropy if exp.original_entropy else 1)) * 100 %}
+      <div class="info-rows">
+        <div class="info-row"><span>Original entropy</span>
+          <span class="mono">{{ "%.6f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
+        <div class="info-row"><span>Residual entropy</span>
+          <span class="mono">{{ "%.6f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
+        <div class="info-row"><span>Entropy reduction<br><small class="muted">original − residual</small></span>
+          <span class="mono {% if reduction > 0 %}text-green{% elif reduction < 0 %}text-red{% endif %}">
+            {{ "%+.6f"|format(reduction) }} bits/byte
+          </span></div>
+        <div class="info-row"><span>Entropy reduction %<br><small class="muted">((orig − resid) / orig) × 100</small></span>
+          <span class="mono {% if reduction_pct > 0 %}text-green{% elif reduction_pct < 0 %}text-red{% endif %}">
+            {{ "%+.2f"|format(reduction_pct) }}%
+          </span></div>
+      </div>
+      <p class="report-note">
+        Entropy reduction = original_entropy − residual_entropy.<br>
+        A positive value means the predictor successfully decorrelated the data,
+        reducing the per-byte information content before entropy coding.
+      </p>
+    </div>
+  </section>
+
+  <!-- 5. Candidate Compression -->
+  <section class="report-section">
+    <div class="report-section-num">05</div>
+    <div class="report-section-body">
+      <h2>Candidate Compression Payloads</h2>
+      <p class="report-note" style="margin-bottom:14px">
+        These are the <strong>raw codec payload sizes</strong> — the compressed residual bytes
+        produced by each codec, <em>before</em> the AHMC v2 container header is added.
+        The engine compares these two values and selects the smaller one.
+      </p>
+      <div class="info-rows">
+        <div class="info-row"><span>RLE payload (residual only)</span>
+          <span class="mono">{{ fmt_bytes(exp.rle_size) }} &nbsp;({{ exp.rle_size }} bytes)</span></div>
+        <div class="info-row"><span>Huffman payload (residual only)</span>
+          <span class="mono">{{ fmt_bytes(exp.huffman_size) }} &nbsp;({{ exp.huffman_size }} bytes)</span></div>
+        <div class="info-row"><span>Winner (smaller payload)</span>
+          <span class="codec-badge">{{ (exp.selected_codec or '—')|upper }}</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Adaptive Selection -->
+  {% set winner_payload = exp.rle_size if (exp.rle_size or 0) <= (exp.huffman_size or exp.rle_size or 1) else exp.huffman_size %}
+  {% set overhead = (exp.compressed_size or 0) - (winner_payload or 0) %}
+  <section class="report-section">
+    <div class="report-section-num">06</div>
+    <div class="report-section-body">
+      <h2>Adaptive Codec Selection &amp; AHMC Container</h2>
+      <div class="info-rows">
+        <div class="info-row"><span>Selected codec</span>
+          <span class="codec-badge codec-lg">{{ (exp.selected_codec or '—')|upper }}</span></div>
+        <div class="info-row"><span>Selection criterion</span>
+          <span>Minimum raw codec payload size</span></div>
+        {% if (exp.rle_size or 0) <= (exp.huffman_size or 1) %}
+        <div class="info-row"><span>Reason</span>
+          <span class="mono">RLE {{ fmt_bytes(exp.rle_size) }} &le; Huffman {{ fmt_bytes(exp.huffman_size) }}</span></div>
+        {% else %}
+        <div class="info-row"><span>Reason</span>
+          <span class="mono">Huffman {{ fmt_bytes(exp.huffman_size) }} &lt; RLE {{ fmt_bytes(exp.rle_size) }}</span></div>
+        {% endif %}
+        <div class="info-row"><span>Selected payload size</span>
+          <span class="mono">{{ fmt_bytes(winner_payload) }} ({{ winner_payload }} bytes)</span></div>
+        <div class="info-row"><span>AHMC v2 container overhead<br><small class="muted">(magic + version + predictor + codec + sizes)</small></span>
+          <span class="mono {% if overhead > 0 %}muted{% endif %}">+{{ overhead }} bytes</span></div>
+        <div class="info-row"><span><strong>Final AHMC file size</strong><br><small class="muted">payload + container header</small></span>
+          <span class="mono"><strong>{{ fmt_bytes(exp.compressed_size) }} ({{ exp.compressed_size }} bytes)</strong></span></div>
+      </div>
+      {% if overhead > (winner_payload or 1) %}
+      <p class="report-note" style="border-left-color:var(--orange)">
+        <strong>Note:</strong> The AHMC container header overhead exceeds the compressed payload for this small
+        file. The final file is larger than the raw codec payload. This is expected for very small inputs.
+      </p>
+      {% endif %}
+      <!-- Pipeline diagram -->
+      <div class="pipeline">
+        <div class="pipeline-node">Input<br><small>{{ exp.media_type|upper }} &bull; {{ fmt_bytes(exp.original_size) }}</small></div>
+        <div class="pipeline-arrow">↓</div>
+        <div class="pipeline-node">Predictor<br><small>{{ 'LEFT NEIGHBOUR' if exp.media_type=='image' else 'DELTA' }}</small></div>
+        <div class="pipeline-arrow">↓ residual stream</div>
+        <div class="pipeline-fork">
+          <div class="pipeline-node pipeline-candidate {% if exp.selected_codec == 'rle' %}pipeline-selected{% endif %}">
+            RLE payload<br><small>{{ fmt_bytes(exp.rle_size) }}</small>
+          </div>
+          <div class="pipeline-node pipeline-candidate {% if exp.selected_codec == 'huffman' %}pipeline-selected{% endif %}">
+            Huffman payload<br><small>{{ fmt_bytes(exp.huffman_size) }}</small>
+          </div>
+        </div>
+        <div class="pipeline-arrow">↓ + AHMC v2 header (+{{ overhead }}B)</div>
+        <div class="pipeline-node pipeline-winner">Final AHMC v2<br><small>{{ fmt_bytes(exp.compressed_size) }}</small></div>
+        <div class="pipeline-arrow">↓ decompress + inverse predictor</div>
+        <div class="pipeline-node {% if exp.verification %}pipeline-pass{% else %}pipeline-fail{% endif %}">
+          Verification<br><small>{% if exp.verification %}✓ PASS — bit-identical{% else %}✗ FAIL — mismatch{% endif %}</small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Final Result -->
+  <section class="report-section">
+    <div class="report-section-num">07</div>
+    <div class="report-section-body">
+      <h2>Final Compression Result</h2>
+      <p class="report-note" style="margin-bottom:14px">
+        All size calculations use the <strong>actual on-disk AHMC v2 file size</strong>,
+        which includes the container header. The ratio and space-saved figures
+        correctly account for this overhead.
+      </p>
+      <div class="info-rows">
+        <div class="info-row"><span>Original file size</span>
+          <span class="mono">{{ fmt_bytes(exp.original_size) }} &nbsp;({{ exp.original_size }} bytes)</span></div>
+        <div class="info-row"><span>Selected codec payload</span>
+          {% set wp = exp.rle_size if (exp.rle_size or 0) <= (exp.huffman_size or exp.rle_size or 1) else exp.huffman_size %}
+          <span class="mono">{{ fmt_bytes(wp) }} &nbsp;({{ wp }} bytes)</span></div>
+        <div class="info-row"><span>AHMC v2 file size (payload + header)</span>
+          <span class="mono"><strong>{{ fmt_bytes(exp.compressed_size) }}</strong> &nbsp;({{ exp.compressed_size }} bytes)</span></div>
+        <div class="info-row"><span>Compression ratio<br>
+          <small class="muted">original_size / ahmc_file_size</small></span>
+          <span class="mono {% if (exp.compression_ratio or 0) >= 1 %}text-green{% else %}text-red{% endif %}">
+            {{ "%.6f"|format(exp.compression_ratio or 0) }}x
+          </span></div>
+        <div class="info-row"><span>Space saved<br>
+          <small class="muted">(1 − ahmc_size / original_size) × 100</small></span>
+          <span class="mono {% if (exp.space_saved_percent or 0) > 0 %}text-green{% else %}text-red{% endif %}">
+            {{ "%+.4f"|format(exp.space_saved_percent or 0) }}%
+          </span></div>
+      </div>
+      {% if (exp.compressed_size or 0) > (exp.original_size or 1) %}
+      <p class="report-note" style="border-left-color:var(--yellow);margin-top:12px">
+        <strong>Expansion detected:</strong> The AHMC file ({{ fmt_bytes(exp.compressed_size) }}) is
+        larger than the original ({{ fmt_bytes(exp.original_size) }}). This can occur when the input
+        has high entropy (near-random data) or is too small for the codec to achieve savings.
+        Ratio &lt; 1.0 and a negative space-saved value are reported — this is correct and intentional.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- 8. Timing -->
+  <section class="report-section">
+    <div class="report-section-num">08</div>
+    <div class="report-section-body">
+      <h2>Timing</h2>
+      <div class="info-rows">
+        <div class="info-row"><span>Compression time</span>
+          <span class="mono">{{ "%.1f"|format(exp.compression_time_ms or 0) }} ms</span></div>
+        <div class="info-row"><span>Decompression time</span>
+          <span class="mono">{{ "%.1f"|format(exp.decompression_time_ms or 0) }} ms</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. Lossless Verification -->
+  <section class="report-section">
+    <div class="report-section-num">09</div>
+    <div class="report-section-body">
+      <h2>Lossless Verification</h2>
+      <div class="verify-banner {% if exp.verification %}verify-banner-pass{% else %}verify-banner-fail{% endif %}">
+        <div class="verify-icon">{% if exp.verification %}✓{% else %}✗{% endif %}</div>
+        <div>
+          <div class="verify-status">{{ "PASS — Exact lossless reconstruction" if exp.verification else "FAIL — Mismatch detected" }}</div>
+          <div class="verify-desc">
+            {% if exp.verification %}
+            The decompressed output is bit-identical to the original input.
+            Every {{ "pixel" if exp.media_type == "image" else "PCM sample" }} matches exactly.
+            {% else %}
+            Decompressed output differs from the original. This should not occur with correct AHMC v2 files.
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

@@ -1,0 +1,146 @@
+# ================================================================
+# AHLC — .gitignore
+# ================================================================
+
+# ── CMake / Build ────────────────────────────────────────────────
+build/
+out/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+*.vcxproj.user
+*.vcxproj.filters
+*.sln
+.vs/
+
+# Compiled binary (keep source, not the binary)
+*.exe
+*.dll
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Distribution / packaging
+dist/
+.eggs/
+*.egg-info/
+*.egg
+
+# pytest
+.pytest_cache/
+.tox/
+htmlcov/
+.coverage
+coverage.xml
+
+# mypy / type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ── Flask / AHLC Runtime ─────────────────────────────────────────
+# SQLite database (runtime, not version-controlled)
+flask_app/ahlc.db
+flask_app/*.db
+flask_app/*.db-shm
+flask_app/*.db-wal
+
+# Uploaded and processed media files
+uploads/
+outputs/
+reports/
+
+# Temporary test files created by ahmc test suites
+*.tmp
+__*.bmp
+__*.ahmc
+__*.wav
+__*.bin
+bitio_test_tmp.bin
+*_tmp_verify.bmp
+*_tmp_verify.wav
+__verify_tmp.bmp
+__verify_tmp.wav
+
+# ── IDEs ─────────────────────────────────────────────────────────
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# JetBrains (CLion, PyCharm)
+.idea/
+*.iml
+*.iws
+cmake-build-debug/
+cmake-build-release/
+
+# ── OS ───────────────────────────────────────────────────────────
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ── Logs / Temp ──────────────────────────────────────────────────
+*.log
+*.bak
+*.swp
+*.swo
+*~
+
+# ── Keep these directories (with .gitkeep) ───────────────────────
+# uploads/ and outputs/ are gitignored above but the directories
+# should exist. Add a .gitkeep inside each if needed:
+#   uploads/.gitkeep
+#   outputs/.gitkeep
