@@ -34,7 +34,7 @@
       <td class="muted">{{ exp.id }}</td>
       <td class="muted mono">{{ exp.created_at[:16] }}</td>
       <td><span class="filename">{{ exp.filename }}</span></td>
-      <td><span class="badge badge-{{ exp.media_type }}">{{ exp.media_type|upper }}</span></td>
+      <td><span class="type-badge">{{ exp.filename.split('.')[-1]|upper }}</span></td>
       <td>{{ fmt_bytes(exp.original_size) }}</td>
       <td>{{ fmt_bytes(exp.compressed_size) }}</td>
       <td class="ratio-cell {% if (exp.compression_ratio or 0) >= 1 %}ratio-good{% else %}ratio-bad{% endif %}">

@@ -1,5 +1,5 @@
 """
-app.py  —  AHLC Flask Dashboard
+app.py  —  AHLC Image Compression Dashboard (BMP & PNG)
 Run with:  python flask_app/app.py
 """
 import os
@@ -18,7 +18,7 @@ import database as db
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 UPLOAD_DIR   = PROJECT_ROOT / "uploads"
 OUTPUT_DIR   = PROJECT_ROOT / "outputs"
-ALLOWED_EXT  = {"bmp", "wav"}
+ALLOWED_EXT  = {"bmp", "png"}
 MAX_UPLOAD   = 100 * 1024 * 1024  # 100 MB
 
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -79,20 +79,15 @@ def do_analyze():
         flash("No file selected.", "error")
         return redirect(url_for("analyze_page"))
     if not _allowed(f.filename):
-        flash("Only .bmp and .wav files are supported.", "error")
+        flash("Only .bmp and .png image files are supported.", "error")
         return redirect(url_for("analyze_page"))
 
     sid = uuid.uuid4().hex
     safe = secure_filename(f.filename)
-    ext  = safe.rsplit(".", 1)[1].lower()
     upload_path = UPLOAD_DIR / f"{sid}_{safe}"
     f.save(str(upload_path))
 
-    if ext == "bmp":
-        data = runner.analyze_image(upload_path)
-    else:
-        data = runner.analyze_audio(upload_path)
-
+    data = runner.analyze_image(upload_path)
     upload_path.unlink(missing_ok=True)
 
     if not data.get("ok"):
@@ -112,7 +107,7 @@ def do_compress():
         flash("No file selected.", "error")
         return redirect(url_for("dashboard"))
     if not _allowed(f.filename):
-        flash("Only .bmp and .wav files are supported.", "error")
+        flash("Only .bmp and .png image files are supported.", "error")
         return redirect(url_for("dashboard"))
 
     sid  = uuid.uuid4().hex
@@ -120,13 +115,10 @@ def do_compress():
     ext  = safe.rsplit(".", 1)[1].lower()
 
     upload_path = UPLOAD_DIR / f"{sid}_{safe}"
-    output_path = OUTPUT_DIR / f"{sid}_compressed.ahmc"
+    output_path = OUTPUT_DIR / f"{sid}_compressed.{ext}"
     f.save(str(upload_path))
 
-    if ext == "bmp":
-        data = runner.compress_image(upload_path, output_path)
-    else:
-        data = runner.compress_audio(upload_path, output_path)
+    data = runner.compress_image(upload_path, output_path)
 
     if not data.get("ok"):
         upload_path.unlink(missing_ok=True)
@@ -139,7 +131,7 @@ def do_compress():
         data=data,
         original_path=str(upload_path),
         compressed_path=data.get("compressed_path", str(output_path)),
-        recovered_path=data.get("recovered_path", ""),
+        recovered_path=data.get("recovered_path", str(output_path)),
     )
     return redirect(url_for("result", exp_id=exp_id))
 
@@ -176,64 +168,31 @@ def report(exp_id):
 
 
 # ================================================================
-# Download compressed  GET /download/<id>/compressed
+# Download image (BMP or PNG)
 # ================================================================
+@app.route("/download/<int:exp_id>")
+@app.route("/download/<int:exp_id>/image")
 @app.route("/download/<int:exp_id>/compressed")
-def download_compressed(exp_id):
-    exp = db.get_experiment(exp_id)
-    if not exp or not exp.get("compressed_path"):
-        abort(404)
-    p = Path(exp["compressed_path"])
-    if not p.exists():
-        abort(404)
-    return send_file(str(p), as_attachment=True,
-                     download_name=f"ahlc_{exp['filename']}.ahmc")
-
-
-# ================================================================
-# Download recovered  GET /download/<id>/recovered
-# ================================================================
 @app.route("/download/<int:exp_id>/recovered")
-def download_recovered(exp_id):
+def download_image(exp_id):
     exp = db.get_experiment(exp_id)
-    if not exp or not exp.get("recovered_path"):
+    if not exp:
         abort(404)
-    p = Path(exp["recovered_path"])
+    p_str = exp.get("compressed_path") or exp.get("recovered_path")
+    if not p_str:
+        abort(404)
+    p = Path(p_str)
     if not p.exists():
         abort(404)
-    ext = ".bmp" if exp["media_type"] == "image" else ".wav"
-    return send_file(str(p), as_attachment=True,
-                     download_name=f"recovered_{exp['filename']}{ext}")
 
-
-# ================================================================
-# Decompress  POST /decompress/<id>
-# ================================================================
-@app.route("/decompress/<int:exp_id>", methods=["POST"])
-def decompress(exp_id):
-    exp = db.get_experiment(exp_id)
-    if not exp or not exp.get("compressed_path"):
-        abort(404)
-    ahmc = Path(exp["compressed_path"])
-    if not ahmc.exists():
-        flash("Compressed file not found.", "error")
-        return redirect(url_for("result", exp_id=exp_id))
-
-    sid  = uuid.uuid4().hex
-    ext  = ".bmp" if exp["media_type"] == "image" else ".wav"
-    out  = OUTPUT_DIR / f"{sid}_decompressed{ext}"
-
-    if exp["media_type"] == "image":
-        r = runner.decompress_image(ahmc, out)
-    else:
-        r = runner.decompress_audio(ahmc, out)
-
-    if not r.success:
-        flash(f"Decompression failed: {r.stderr or r.error}", "error")
-    else:
-        flash("Decompression successful.", "success")
-
-    return redirect(url_for("result", exp_id=exp_id))
+    orig_name = exp["filename"]
+    mimetype = "image/png" if orig_name.lower().endswith(".png") else "image/bmp"
+    return send_file(
+        str(p),
+        as_attachment=True,
+        download_name=orig_name,
+        mimetype=mimetype,
+    )
 
 
 # ================================================================
@@ -263,7 +222,7 @@ def too_large(_):
 # ================================================================
 if __name__ == "__main__":
     print("\n" + "=" * 50)
-    print("  AHLC Dashboard")
+    print("  AHLC Image Compression Dashboard (BMP & PNG)")
     print("  Running at http://127.0.0.1:5000")
     print("=" * 50 + "\n")
     app.run(debug=True, host="127.0.0.1", port=5000)

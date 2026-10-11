@@ -1,26 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Analyze — AHLC{% endblock %}
+{% block title %}Analyze Image — AHLC{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1 class="page-title">File Analysis</h1>
-    <p class="page-sub">Inspect entropy and metadata before compression</p>
+    <h1 class="page-title">Image Analysis</h1>
+    <p class="page-sub">Inspect entropy and metadata for BMP and PNG images</p>
   </div>
 </div>
 
 <form action="{{ url_for('do_analyze') }}" method="post" enctype="multipart/form-data">
   <div class="upload-zone" id="drop-zone-analyze">
-    <input type="file" id="file-input-analyze" name="file" accept=".bmp,.wav" style="display:none"/>
+    <input type="file" id="file-input-analyze" name="file" accept=".bmp,.png" style="display:none"/>
     <div class="upload-icon">
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     </div>
     <div class="upload-text">
-      <p class="upload-main">Drop File to Analyze</p>
+      <p class="upload-main">Drop BMP or PNG Image to Analyze</p>
       <p class="upload-hint">or <button type="button" class="upload-browse" onclick="document.getElementById('file-input-analyze').click()">Browse Files</button></p>
     </div>
     <div class="upload-types">
-      <span class="type-badge">BMP</span><span class="type-badge">WAV</span>
+      <span class="type-badge">BMP</span><span class="type-badge">PNG</span>
     </div>
     <div id="file-selected-analyze" class="file-selected" style="display:none">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
@@ -30,7 +30,7 @@
   <div style="text-align:center;margin-top:1rem">
     <button type="submit" class="btn btn-primary">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      Analyze File
+      Analyze Image
     </button>
   </div>
 </form>
@@ -40,29 +40,19 @@
   <h2 class="section-title">Analysis: {{ filename }}</h2>
 </div>
 <div class="result-grid">
-  {% if result.media_type == 'image' %}
   <div class="info-card">
     <div class="info-card-title">Image Properties</div>
     <div class="info-rows">
+      <div class="info-row"><span>Detected Format</span><span class="type-badge">{{ result.format or (filename.split('.')[-1]|upper) }}</span></div>
       <div class="info-row"><span>Dimensions</span><span>{{ result.width }} × {{ result.height }} px</span></div>
       <div class="info-row"><span>Bit depth</span><span>{{ result.bpp }} bpp</span></div>
+      {% if result.total_pixel_bytes %}
       <div class="info-row"><span>Pixel bytes</span><span>{{ fmt_bytes(result.total_pixel_bytes) }}</span></div>
+      {% endif %}
       <div class="info-row"><span>Unique byte values</span><span>{{ result.unique_bytes }} / 256</span></div>
+      <div class="info-row"><span>Analysis time</span><span class="mono">{{ "%.1f"|format(result.elapsed_ms or 0) }} ms</span></div>
     </div>
   </div>
-  {% else %}
-  <div class="info-card">
-    <div class="info-card-title">Audio Properties</div>
-    <div class="info-rows">
-      <div class="info-row"><span>Channels</span><span>{{ result.channels }}</span></div>
-      <div class="info-row"><span>Sample rate</span><span>{{ result.sample_rate }} Hz</span></div>
-      <div class="info-row"><span>Bit depth</span><span>{{ result.bits_per_sample }}-bit</span></div>
-      <div class="info-row"><span>Duration</span><span>{{ "%.2f"|format(result.duration_seconds or 0) }} s</span></div>
-      <div class="info-row"><span>PCM bytes</span><span>{{ fmt_bytes(result.pcm_bytes) }}</span></div>
-      <div class="info-row"><span>Unique byte values</span><span>{{ result.unique_bytes }} / 256</span></div>
-    </div>
-  </div>
-  {% endif %}
 
   <div class="info-card">
     <div class="info-card-title">Entropy Analysis</div>
@@ -83,11 +73,11 @@
     </div>
     <p class="info-hint">
       {% if (result.entropy or 0) < 3 %}
-      Low entropy — RLE likely to compress well.
+      Low entropy — high redundancy; predictive compression or RLE will compress very well.
       {% elif (result.entropy or 0) < 6 %}
-      Medium entropy — Huffman expected to be competitive.
+      Medium entropy — Huffman / DEFLATE entropy coding will be effective.
       {% else %}
-      High entropy — limited compression possible for raw data.
+      High entropy — complex pixel patterns; already compressed or high variance data.
       {% endif %}
     </p>
   </div>

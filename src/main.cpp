@@ -18,6 +18,16 @@
 #include "audio/audio.hpp"
 #include "audio/audio_predictor.hpp"
 #include "entropy/huffman.hpp"
+#include "media/format_detector.hpp"
+
+// FFmpeg (linked via vcpkg — avutil, avcodec, avformat, swscale, swresample)
+extern "C" {
+#include <libavutil/avutil.h>
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
+}
 
 static constexpr double PI = 3.14159265358979323846;
 
@@ -429,7 +439,10 @@ static void print_usage()
         <<"  ahmc huffman-decompress <in> <out>           Huffman decompress\n"
         <<"  ahmc huffman-verify <orig> <rec>             Verify Huffman\n"
         <<"  ahmc huffman-test                            Run Huffman tests\n"
-        <<"  ahmc entropy-compare <file>                  Compare RLE vs Huffman\n";
+        <<"  ahmc entropy-compare <file>                  Compare RLE vs Huffman\n"
+        <<"  ahmc ffmpeg-test                             Verify FFmpeg integration\n"
+        <<"  ahmc format-analyze <file>                   Analyze media format\n"
+        <<"  ahmc format-test                             Run format detection tests\n";
 }
 
 // ================================================================
@@ -611,6 +624,87 @@ int main(int argc, char* argv[])
         ahlc::AudioBuffer audio;if(ahlc::read_wav(argv[2],audio)){auto res=ahlc::encode_audio_predictor(audio);run_entropy_compare("Audio residuals",res);run_entropy_compare("Audio raw PCM",audio.pcm);return 0;}
         std::vector<uint8_t> raw;if(read_bytes(argv[2],raw)){run_entropy_compare(std::string("File: ")+argv[2],raw);return 0;}
         std::cerr<<"Error: cannot read "<<argv[2]<<"\n";return 1;
+    }
+
+    // ---- FFmpeg integration test ----
+    if (cmd == "ffmpeg-test") {
+        std::cout << "--------------------------------------------\n";
+        std::cout << " AHLC FFmpeg Integration Test\n";
+        std::cout << "--------------------------------------------\n";
+
+        // Build-time version constants (from headers)
+        std::cout << " Compiled against:\n";
+        std::printf("   libavutil    version : %d.%d.%d\n",
+            LIBAVUTIL_VERSION_MAJOR,
+            LIBAVUTIL_VERSION_MINOR,
+            LIBAVUTIL_VERSION_MICRO);
+        std::printf("   libavcodec   version : %d.%d.%d\n",
+            LIBAVCODEC_VERSION_MAJOR,
+            LIBAVCODEC_VERSION_MINOR,
+            LIBAVCODEC_VERSION_MICRO);
+        std::printf("   libavformat  version : %d.%d.%d\n",
+            LIBAVFORMAT_VERSION_MAJOR,
+            LIBAVFORMAT_VERSION_MINOR,
+            LIBAVFORMAT_VERSION_MICRO);
+        std::printf("   libswscale   version : %d.%d.%d\n",
+            LIBSWSCALE_VERSION_MAJOR,
+            LIBSWSCALE_VERSION_MINOR,
+            LIBSWSCALE_VERSION_MICRO);
+        std::printf("   libswresample version: %d.%d.%d\n",
+            LIBSWRESAMPLE_VERSION_MAJOR,
+            LIBSWRESAMPLE_VERSION_MINOR,
+            LIBSWRESAMPLE_VERSION_MICRO);
+
+        // Runtime version strings (from linked library)
+        std::cout << "\n Linked library versions:\n";
+        std::printf("   avutil   : %s\n", av_version_info());
+        std::printf("   avutil   : %u (runtime)\n", avutil_version());
+        std::printf("   avcodec  : %u (runtime)\n", avcodec_version());
+        std::printf("   avformat : %u (runtime)\n", avformat_version());
+        std::printf("   swscale  : %u (runtime)\n", swscale_version());
+        std::printf("   swresample:%u (runtime)\n", swresample_version());
+
+        std::cout << "\n FFmpeg license : " << avutil_license() << "\n";
+        std::cout << "\n Status: FFmpeg headers included and libraries linked correctly.\n";
+        std::cout << "--------------------------------------------\n";
+        std::cout << " Result: PASS\n";
+        std::cout << "--------------------------------------------\n";
+        return 0;
+    }
+
+    // ---- Format Analysis ----
+    if (cmd == "format-analyze") {
+        if(argc < 3){std::cerr<<"Error: needs a file.\n";return 1;}
+        ahlc::media::FormatInfo info = ahlc::media::detect_format(argv[2]);
+        ahlc::media::print_format_analysis(argv[2], info);
+        return info.ok ? 0 : 1;
+    }
+    if (cmd == "format-test") {
+        std::cout << "AHLC Format Detection Test\n--------------------------\n";
+        bool ok = true;
+        
+        // 1. Create a tiny synthetic BMP
+        const std::string tmp_bmp = "format_test_tmp.bmp";
+        std::vector<uint8_t> bmp_data = {
+            0x42, 0x4D, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 
+            0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 
+            0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x00, 0x00, 
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00
+        };
+        write_bytes(tmp_bmp, bmp_data);
+        
+        auto info = ahlc::media::detect_format(tmp_bmp);
+        std::remove(tmp_bmp.c_str());
+        
+        if (!info.ok || info.media_type != ahlc::media::MediaType::Image || info.format != ahlc::media::MediaFormat::BMP) {
+            std::cout << "BMP detection: FAIL\n";
+            ok = false;
+        } else {
+            std::cout << "BMP detection: PASS\n";
+        }
+        
+        std::cout << "Result: " << (ok ? "PASS" : "FAIL") << "\n";
+        return ok ? 0 : 1;
     }
 
     std::cerr<<"Error: Unknown command '"<<cmd<<"'.\n";print_usage();return 1;

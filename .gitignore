@@ -25,6 +25,8 @@ _deps/
 *.ilk
 *.exp
 *.lib
+vcpkg_installed/
+scratch/
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/

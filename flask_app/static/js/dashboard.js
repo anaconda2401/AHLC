@@ -37,8 +37,8 @@ function setupDropZone(zoneId, inputId, nameId, selectedId) {
     const file = e.dataTransfer.files[0];
     if (!file) return;
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['bmp','wav'].includes(ext)) {
-      alert('Unsupported format. Please upload a .bmp or .wav file.');
+    if (!['bmp','png'].includes(ext)) {
+      alert('Unsupported format. Please upload a .bmp or .png file.');
       zone.classList.remove('drag-over');
       return;
     }
@@ -66,9 +66,9 @@ function setupCompressForm() {
 
     // Validate extension
     const ext = input.files[0].name.split('.').pop().toLowerCase();
-    if (!['bmp','wav'].includes(ext)) {
+    if (!['bmp','png'].includes(ext)) {
       e.preventDefault();
-      alert('Only .bmp and .wav files are supported.');
+      alert('Only .bmp and .png files are supported.');
       return;
     }
 

@@ -22,15 +22,15 @@
     <div class="stat-icon icon-teal">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
     </div>
-    <div class="stat-value">{{ stats.images }}</div>
-    <div class="stat-label">Images Processed</div>
+    <div class="stat-value">{{ stats.bmps }}</div>
+    <div class="stat-label">BMP Images</div>
   </div>
   <div class="stat-card">
     <div class="stat-icon icon-purple">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     </div>
-    <div class="stat-value">{{ stats.audio }}</div>
-    <div class="stat-label">Audio Files Processed</div>
+    <div class="stat-value">{{ stats.pngs }}</div>
+    <div class="stat-label">PNG Images</div>
   </div>
   <div class="stat-card">
     <div class="stat-icon icon-orange">
@@ -51,19 +51,19 @@
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     </div>
     <div class="stat-value">{{ stats.verification_rate }}%</div>
-    <div class="stat-label">Lossless Verification Rate</div>
+    <div class="stat-label">Pixel Lossless Verify Rate</div>
   </div>
 </div>
 
 <!-- ===== Upload Zone ===== -->
 <div class="section-header">
-  <h2 class="section-title">Compress New File</h2>
-  <p class="section-sub">Supports .bmp (image) and .wav (audio)</p>
+  <h2 class="section-title">Compress Image</h2>
+  <p class="section-sub">Lossless compression for BMP and PNG images with pixel-identical verification</p>
 </div>
 
 <form id="compress-form" action="{{ url_for('do_compress') }}" method="post" enctype="multipart/form-data">
   <div class="upload-zone" id="drop-zone">
-    <input type="file" id="file-input" name="file" accept=".bmp,.wav" style="display:none"/>
+    <input type="file" id="file-input" name="file" accept=".bmp,.png" style="display:none"/>
     <div class="upload-icon">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <polyline points="16 16 12 12 8 16"/>
@@ -72,12 +72,12 @@
       </svg>
     </div>
     <div class="upload-text">
-      <p class="upload-main">Drop Image or Audio Here</p>
+      <p class="upload-main">Drop BMP or PNG Image Here</p>
       <p class="upload-hint">or <button type="button" class="upload-browse" onclick="document.getElementById('file-input').click()">Browse Files</button></p>
     </div>
     <div class="upload-types">
       <span class="type-badge">BMP</span>
-      <span class="type-badge">WAV</span>
+      <span class="type-badge">PNG</span>
     </div>
     <div id="file-selected" class="file-selected" style="display:none">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>

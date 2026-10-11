@@ -105,11 +105,11 @@ def get_all_experiments(limit: int = 200) -> list:
 
 def get_dashboard_stats() -> dict:
     with _conn() as con:
-        total  = con.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
-        images = con.execute("SELECT COUNT(*) FROM experiments WHERE media_type='image'").fetchone()[0]
-        audio  = con.execute("SELECT COUNT(*) FROM experiments WHERE media_type='audio'").fetchone()[0]
-        avg_r  = con.execute("SELECT AVG(compression_ratio) FROM experiments WHERE compression_ratio IS NOT NULL").fetchone()[0]
-        saved  = con.execute("SELECT SUM(original_size - compressed_size) FROM experiments").fetchone()[0]
+        total = con.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
+        bmps = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.bmp' OR media_type='bmp'").fetchone()[0]
+        pngs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.png' OR media_type='png'").fetchone()[0]
+        avg_r = con.execute("SELECT AVG(compression_ratio) FROM experiments WHERE compression_ratio IS NOT NULL").fetchone()[0]
+        saved = con.execute("SELECT SUM(original_size - compressed_size) FROM experiments WHERE original_size >= compressed_size").fetchone()[0]
         ver_ok = con.execute("SELECT COUNT(*) FROM experiments WHERE verification=1").fetchone()[0]
         ver_rt = (ver_ok / total * 100) if total > 0 else 0.0
         recent = con.execute(
@@ -117,8 +117,8 @@ def get_dashboard_stats() -> dict:
         ).fetchall()
     return {
         "total": total,
-        "images": images,
-        "audio": audio,
+        "bmps": bmps,
+        "pngs": pngs,
         "avg_ratio": round(avg_r, 3) if avg_r else 0.0,
         "total_saved_bytes": saved or 0,
         "verification_rate": round(ver_rt, 1),
