@@ -51,6 +51,12 @@ def init_db():
             frame_count          INTEGER,
             video_codec          TEXT,
             has_audio            INTEGER,
+            -- Fallback & Container metrics
+            is_fallback          INTEGER DEFAULT 0,
+            candidate_codec      TEXT,
+            fallback_reason      TEXT,
+            ahmc_container_size  INTEGER DEFAULT 0,
+            container_overhead   INTEGER DEFAULT 0,
             -- File paths
             original_path        TEXT,
             compressed_path      TEXT,
@@ -58,10 +64,17 @@ def init_db():
             created_at           TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
-        # Ensure new video columns exist if upgrading an existing DB
+        # Ensure new columns exist if upgrading an existing DB
         cols = {row["name"] for row in con.execute("PRAGMA table_info(experiments)").fetchall()}
-        for col, col_type in [("fps", "REAL"), ("frame_count", "INTEGER"),
-                              ("video_codec", "TEXT"), ("has_audio", "INTEGER")]:
+        for col, col_type in [
+            ("fps", "REAL"), ("frame_count", "INTEGER"),
+            ("video_codec", "TEXT"), ("has_audio", "INTEGER"),
+            ("is_fallback", "INTEGER DEFAULT 0"),
+            ("candidate_codec", "TEXT"),
+            ("fallback_reason", "TEXT"),
+            ("ahmc_container_size", "INTEGER DEFAULT 0"),
+            ("container_overhead", "INTEGER DEFAULT 0"),
+        ]:
             if col not in cols:
                 con.execute(f"ALTER TABLE experiments ADD COLUMN {col} {col_type}")
 
@@ -82,8 +95,10 @@ def save_experiment(session_id: str, filename: str, data: dict,
             width, height, bpp,
             channels, sample_rate, bits_per_sample, duration_seconds,
             fps, frame_count, video_codec, has_audio,
+            is_fallback, candidate_codec, fallback_reason,
+            ahmc_container_size, container_overhead,
             original_path, compressed_path, recovered_path
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             session_id, filename, media,
             data.get("original_size"), data.get("compressed_size"),
@@ -98,9 +113,26 @@ def save_experiment(session_id: str, filename: str, data: dict,
             data.get("bits_per_sample"), data.get("duration_seconds"),
             data.get("fps"), data.get("frame_count"),
             data.get("video_codec"), 1 if data.get("has_audio") else 0,
+            1 if data.get("is_fallback") else 0,
+            data.get("candidate_codec"),
+            data.get("fallback_reason"),
+            data.get("ahmc_container_size", 0),
+            max(0, data.get("container_overhead", 0)),
             original_path, compressed_path, recovered_path,
         ))
         return cur.lastrowid
+
+
+def update_experiment(exp_id: int, fields: dict) -> bool:
+    """Update specific fields of an experiment row."""
+    if not fields:
+        return False
+    keys = list(fields.keys())
+    set_clause = ", ".join(f"{k} = ?" for k in keys)
+    values = [fields[k] for k in keys] + [exp_id]
+    with _conn() as con:
+        con.execute(f"UPDATE experiments SET {set_clause} WHERE id = ?", values)
+    return True
 
 
 def get_experiment(exp_id: int) -> Optional[dict]:

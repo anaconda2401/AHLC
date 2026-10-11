@@ -110,6 +110,20 @@ class TestVideoCompressionSuite(unittest.TestCase):
         cls.non_video_mp4 = cls.test_dir / "text_as_mp4.mp4"
         cls.non_video_mp4.write_text("This is plain text with an mp4 extension")
 
+        # 6. Compressed H.264 video inside AVI container with audio (matches Experiment #78 pattern)
+        cls.h264_avi_with_audio = cls.test_dir / "h264_with_audio.avi"
+        cmd6 = [
+            cls.ffmpeg, "-y",
+            "-f", "lavfi", "-i", "testsrc=duration=1.0:size=64x64:rate=10",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1.0:sample_rate=44100",
+            "-c:v", "libx264",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "mp3",
+            str(cls.h264_avi_with_audio)
+        ]
+        subprocess.run(cmd6, capture_output=True, check=True)
+
     # ----------------------------------------------------------------
     # Requirement 1: Short uncompressed AVI video
     # ----------------------------------------------------------------
@@ -339,9 +353,13 @@ class TestVideoCompressionSuite(unittest.TestCase):
         self.assertEqual(res["bytes_saved"], 0)
         self.assertEqual(res["space_saved_percent"], 0.0)
         self.assertEqual(res["compression_ratio"], 1.0)
+        self.assertEqual(res["selected_codec"], "original")
+        self.assertTrue(res["is_fallback"])
+        self.assertEqual(res["container_overhead"], 0)
         self.assertIn("Original MP4 Retained", res["method"])
         print(f"  Input size: {res['original_size']} B -> Output size: {res['compressed_size']} B")
-        print(f"  Method: {res['method']}")
+        print(f"  Selected codec: {res['selected_codec']} (Attempted candidate: {res.get('candidate_codec')})")
+        print(f"  Container overhead: {res['container_overhead']} B")
         print(f"  Bytes saved: {res['bytes_saved']} B ({res['space_saved_percent']:.2f}%), Ratio: {res['compression_ratio']:.2f}x")
         print("  Honest retention verified: 0 fake reduction reported.")
 
@@ -378,6 +396,77 @@ class TestVideoCompressionSuite(unittest.TestCase):
         print("  50 MB demo upload limit verified on /compress and /analyze.")
 
 
+    # ----------------------------------------------------------------
+    # Requirement 12: Video Fallback, Overhead Prevention, Report Consistency & Download
+    # ----------------------------------------------------------------
+    def test_12_fallback_and_overhead_consistency(self):
+        print("\n[Test 12] Video fallback, negative overhead prevention & report consistency...")
+        client = app.test_client()
+
+        # Test runner fallback on H.264 AVI with audio
+        out_avi = self.test_dir / "out_fallback_test.avi"
+        res = runner.compress_avi(self.h264_avi_with_audio, out_avi)
+        self.assertTrue(res.get("ok"))
+        self.assertTrue(res["is_fallback"])
+        self.assertEqual(res["selected_codec"], "original")
+        self.assertIn(res["candidate_codec"], ("rle", "huffman"))
+        self.assertEqual(res["container_overhead"], 0)
+        self.assertEqual(res["compressed_size"], res["original_size"])
+        self.assertEqual(res["bytes_saved"], 0)
+        self.assertEqual(res["compression_ratio"], 1.0)
+        self.assertTrue(res["verification"])
+
+        # Test Flask upload, DB persistence, report rendering, and download
+        with open(self.h264_avi_with_audio, "rb") as f:
+            resp = client.post(
+                "/compress",
+                data={"file": (f, "test_fallback_audio.avi")},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        exp_id = int(resp.headers["Location"].split("/")[-1])
+
+        # Verify DB record
+        exp = db.get_experiment(exp_id)
+        self.assertIsNotNone(exp)
+        self.assertEqual(exp["is_fallback"], 1)
+        self.assertEqual(exp["selected_codec"], "original")
+        self.assertEqual(exp["compressed_size"], exp["original_size"])
+        self.assertEqual(exp["compression_ratio"], 1.0)
+        self.assertEqual(exp["space_saved_percent"], 0.0)
+        self.assertEqual(exp["container_overhead"], 0)
+        self.assertEqual(exp["verification"], 1)
+
+        # Verify Report Page
+        rep_resp = client.get(f"/report/{exp_id}")
+        self.assertEqual(rep_resp.status_code, 200)
+        html = rep_resp.data.decode("utf-8")
+        self.assertIn("ORIGINAL RETAINED", html)
+        self.assertIn("No size reduction", html)
+        self.assertNotIn("+-", html, "Negative overhead syntax '+-' must never appear")
+        self.assertIn("0 bytes", html)
+
+        # Verify Download Page
+        d_resp = client.get(f"/download/{exp_id}/video")
+        self.assertEqual(d_resp.status_code, 200)
+        self.assertEqual(d_resp.headers["Content-Type"], "video/x-msvideo")
+        self.assertEqual(len(d_resp.data), exp["original_size"])
+
+        # Save downloaded stream and probe with ffprobe to verify audio preserved
+        temp_dl = self.test_dir / "downloaded_test.avi"
+        temp_dl.write_bytes(d_resp.data)
+        d_resp.close()
+
+        dl_probe = runner.probe_video(temp_dl)
+        self.assertTrue(dl_probe.get("ok"))
+        self.assertTrue(dl_probe.get("has_audio"), "Downloaded video must preserve audio track")
+        self.assertEqual(dl_probe["codec_name"], "h264")
+        print("  Verified: Fallback triggered, selected_codec='original', container_overhead=0.")
+        print("  Verified: Report page rendered consistently with 0 negative overhead.")
+        print("  Verified: Downloaded AVI matches exact input size with audio preserved.")
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

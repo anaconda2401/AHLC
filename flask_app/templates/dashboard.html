@@ -138,7 +138,7 @@
       <td>{{ fmt_bytes(exp.original_size) }}</td>
       <td>{{ fmt_bytes(exp.compressed_size) }}</td>
       <td class="ratio-cell">{{ "%.2f"|format(exp.compression_ratio or 0) }}x</td>
-      <td><span class="codec-badge">{{ (exp.selected_codec or '—')|upper }}</span></td>
+      <td><span class="codec-badge {% if exp.selected_codec == 'original' %}badge-original{% endif %}">{{ 'ORIGINAL' if exp.selected_codec in ['original', 'none'] else (exp.selected_codec or '—')|upper }}</span></td>
       <td>
         {% if exp.verification %}
         <span class="verify-pass">✓ PASS</span>

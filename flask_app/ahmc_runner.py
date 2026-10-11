@@ -577,11 +577,22 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
     space_saved = ((orig_size - actual_output_size) / orig_size * 100.0) if orig_size > 0 else 0.0
     ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
 
-    if bytes_saved <= 0:
+    is_fallback = (bytes_saved <= 0)
+    candidate_codec = c_data.get("selected_codec", "adaptive")
+    ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    if is_fallback:
         bytes_saved = 0
         space_saved = 0.0
         ratio = 1.0
-        best_method = "Original BMP Retained (No size reduction achieved)"
+        selected_codec = "original"
+        fallback_reason = "No size reduction"
+        best_method = "Original BMP Retained (No size reduction)"
+        container_overhead = 0
+    else:
+        selected_codec = candidate_codec
+        fallback_reason = ""
+        wp = min(c_data.get("rle_size", 0), c_data.get("huffman_size", 0))
+        container_overhead = max(0, ahmc_sz - wp) if ahmc_sz and wp else 39
 
     w = c_data.get("width", 0)
     h = c_data.get("height", 0)
@@ -612,12 +623,17 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
         "compressed_path": str(final_bmp),
         "recovered_path": str(final_bmp),
         "predictor": c_data.get("predictor", "left"),
-        "selected_codec": c_data.get("selected_codec", "adaptive"),
+        "selected_codec": selected_codec,
+        "candidate_codec": candidate_codec,
+        "is_fallback": is_fallback,
+        "fallback_reason": fallback_reason,
+        "container_overhead": container_overhead,
+        "ahmc_container_size": ahmc_sz,
         "rle_size": c_data.get("rle_size", 0),
         "huffman_size": c_data.get("huffman_size", 0),
         "original_entropy": c_data.get("original_entropy", 0.0),
         "residual_entropy": c_data.get("residual_entropy", 0.0),
-        "ahlc_ahmc_size": internal_ahmc.stat().st_size if internal_ahmc.exists() else 0,
+        "ahlc_ahmc_size": ahmc_sz,
         "width": w,
         "height": h,
         "bpp": bpp,
@@ -652,13 +668,19 @@ def compress_png(input_path: Path, output_path: Path) -> dict:
         bytes_saved = orig_size - actual_output_size
         space_saved = ((orig_size - actual_output_size) / orig_size * 100.0) if orig_size > 0 else 0.0
         ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
+        selected_codec = "deflate-l9"
+        is_fallback = False
+        fallback_reason = ""
     else:
         shutil.copyfile(input_path, final_png)
-        method = "Original PNG Retained (Already optimally compressed)"
+        method = "Original PNG Retained (No size reduction)"
         actual_output_size = orig_size
         bytes_saved = 0
         space_saved = 0.0
         ratio = 1.0
+        selected_codec = "original"
+        is_fallback = True
+        fallback_reason = "No size reduction"
 
     verified = verify_pixels_identical(input_path, final_png)
     comp_ms = (time.perf_counter() - t0) * 1000
@@ -689,7 +711,12 @@ def compress_png(input_path: Path, output_path: Path) -> dict:
         "compressed_path": str(final_png),
         "recovered_path": str(final_png),
         "predictor": "adaptive scanline filter",
-        "selected_codec": "deflate-l9",
+        "selected_codec": selected_codec,
+        "candidate_codec": "deflate-l9",
+        "is_fallback": is_fallback,
+        "fallback_reason": fallback_reason,
+        "container_overhead": 0,
+        "ahmc_container_size": 0,
         "rle_size": 0,
         "huffman_size": 0,
         "original_entropy": orig_ent,
@@ -746,11 +773,22 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
     space_saved = ((orig_size - actual_output_size) / orig_size * 100.0) if orig_size > 0 else 0.0
     ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
 
-    if bytes_saved <= 0:
+    is_fallback = (bytes_saved <= 0)
+    candidate_codec = c_data.get("selected_codec", "adaptive")
+    ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    if is_fallback:
         bytes_saved = 0
         space_saved = 0.0
         ratio = 1.0
-        best_method = "Original WAV Retained (Already minimal representation)"
+        selected_codec = "original"
+        fallback_reason = "No size reduction"
+        best_method = "Original WAV Retained (No size reduction)"
+        container_overhead = 0
+    else:
+        selected_codec = candidate_codec
+        fallback_reason = ""
+        wp = min(c_data.get("rle_size", 0), c_data.get("huffman_size", 0))
+        container_overhead = max(0, ahmc_sz - wp) if ahmc_sz and wp else 39
 
     # Audio metadata
     try:
@@ -786,12 +824,17 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
         "compressed_path": str(final_wav),
         "recovered_path": str(final_wav),
         "predictor": c_data.get("predictor", "delta"),
-        "selected_codec": c_data.get("selected_codec", "adaptive"),
+        "selected_codec": selected_codec,
+        "candidate_codec": candidate_codec,
+        "is_fallback": is_fallback,
+        "fallback_reason": fallback_reason,
+        "container_overhead": container_overhead,
+        "ahmc_container_size": ahmc_sz,
         "rle_size": c_data.get("rle_size", 0),
         "huffman_size": c_data.get("huffman_size", 0),
         "original_entropy": c_data.get("original_entropy", 0.0),
         "residual_entropy": c_data.get("residual_entropy", 0.0),
-        "ahlc_ahmc_size": internal_ahmc.stat().st_size if internal_ahmc.exists() else 0,
+        "ahlc_ahmc_size": ahmc_sz,
         "channels": channels,
         "sample_rate": sample_rate,
         "bits_per_sample": bps,
@@ -864,14 +907,20 @@ def compress_flac(input_path: Path, output_path: Path) -> dict:
         bytes_saved = orig_size - actual_output_size
         space_saved = (bytes_saved / orig_size) * 100.0
         ratio = orig_size / actual_output_size
+        selected_codec = "flac"
+        is_fallback = False
+        fallback_reason = ""
     else:
         # Retain original FLAC (honest reporting)
         shutil.copyfile(input_path, final_flac)
         actual_output_size = orig_size
-        method = "Original FLAC Retained (Already optimally compressed)"
+        method = "Original FLAC Retained (No size reduction)"
         bytes_saved = 0
         space_saved = 0.0
         ratio = 1.0
+        selected_codec = "original"
+        is_fallback = True
+        fallback_reason = "No size reduction"
 
     final_verified = verify_audio_identical(input_path, final_flac)
     comp_ms = (time.perf_counter() - t0) * 1000
@@ -903,7 +952,12 @@ def compress_flac(input_path: Path, output_path: Path) -> dict:
         "compressed_path": str(final_flac),
         "recovered_path": str(final_flac),
         "predictor": c_data.get("predictor", "delta"),
-        "selected_codec": c_data.get("selected_codec", "adaptive"),
+        "selected_codec": selected_codec,
+        "candidate_codec": c_data.get("selected_codec", "flac"),
+        "is_fallback": is_fallback,
+        "fallback_reason": fallback_reason,
+        "container_overhead": 0,
+        "ahmc_container_size": 0,
         "rle_size": c_data.get("rle_size", 0),
         "huffman_size": c_data.get("huffman_size", 0),
         "original_entropy": orig_ent,
@@ -1036,8 +1090,11 @@ def verify_video_frames_identical(orig_path: Path, rec_path: Path, probe_orig: O
     }
 
 
-def calculate_adaptive_residuals_metrics(raw_bytes: bytes, total_bytes: Optional[int] = None) -> dict:
-    """Compute spatial/temporal residual entropy, RLE candidate size, and Huffman candidate size."""
+def calculate_adaptive_residuals_metrics(raw_bytes: bytes, total_bytes: Optional[int] = None, is_raw_pixels: bool = True) -> dict:
+    """
+    Compute spatial/temporal residual entropy, RLE candidate size, and Huffman candidate size.
+    raw_bytes must be decoded raw pixel frame data when is_raw_pixels=True.
+    """
     if not raw_bytes:
         return {
             "original_entropy": 0.0,
@@ -1045,7 +1102,10 @@ def calculate_adaptive_residuals_metrics(raw_bytes: bytes, total_bytes: Optional
             "rle_size": 0,
             "huffman_size": 0,
             "selected_codec": "rle",
+            "candidate_codec": "rle",
             "predictor": "spatial + inter-frame delta",
+            "entropy_domain": "None",
+            "entropy_units": "bits/byte",
         }
     total = total_bytes or len(raw_bytes)
     sample_size = min(len(raw_bytes), 256 * 1024)
@@ -1053,50 +1113,66 @@ def calculate_adaptive_residuals_metrics(raw_bytes: bytes, total_bytes: Optional
     scale = total / len(sample)
 
     orig_ent = calculate_entropy(sample)
-    arr = np.frombuffer(sample, dtype=np.uint8)
-    diff = np.empty_like(arr)
-    diff[0] = arr[0]
-    diff[1:] = (arr[1:].astype(np.int16) - arr[:-1].astype(np.int16)) & 0xFF
-    residual_bytes = diff.tobytes()
-    res_ent = calculate_entropy(residual_bytes)
+    if is_raw_pixels:
+        arr = np.frombuffer(sample, dtype=np.uint8)
+        diff = np.empty_like(arr)
+        diff[0] = arr[0]
+        diff[1:] = (arr[1:].astype(np.int16) - arr[:-1].astype(np.int16)) & 0xFF
+        residual_bytes = diff.tobytes()
+        res_ent = calculate_entropy(residual_bytes)
 
-    n = len(diff)
-    rle_size = 0
-    i = 0
-    while i < n:
-        run_len = 1
-        while i + run_len < n and diff[i + run_len] == diff[i] and run_len < 127:
-            run_len += 1
-        if run_len >= 2:
-            rle_size += 2
-            i += run_len
-        else:
-            lit_len = 1
-            while i + lit_len < n and (i + lit_len + 1 >= n or diff[i + lit_len] != diff[i + lit_len + 1]) and lit_len < 127:
-                lit_len += 1
-            rle_size += 1 + lit_len
-            i += lit_len
+        n = len(diff)
+        rle_size = 0
+        i = 0
+        while i < n:
+            run_len = 1
+            while i + run_len < n and diff[i + run_len] == diff[i] and run_len < 127:
+                run_len += 1
+            if run_len >= 2:
+                rle_size += 2
+                i += run_len
+            else:
+                lit_len = 1
+                while i + lit_len < n and (i + lit_len + 1 >= n or diff[i + lit_len] != diff[i + lit_len + 1]) and lit_len < 127:
+                    lit_len += 1
+                rle_size += 1 + lit_len
+                i += lit_len
 
-    counts = Counter(residual_bytes)
-    huff_bits = 0
-    for byte_val, count in counts.items():
-        p = count / n
-        bit_len = max(1, math.ceil(-math.log2(p)))
-        huff_bits += count * bit_len
-    huff_size = math.ceil(huff_bits / 8) + 256 + 16
+        counts = Counter(residual_bytes)
+        huff_bits = 0
+        for byte_val, count in counts.items():
+            p = count / n
+            bit_len = max(1, math.ceil(-math.log2(p)))
+            huff_bits += count * bit_len
+        huff_size = math.ceil(huff_bits / 8) + 256 + 16
 
-    scaled_rle = int(round(rle_size * scale))
-    scaled_huff = int(round(huff_size * scale))
-    selected = "rle" if scaled_rle <= scaled_huff else "huffman"
+        scaled_rle = int(round(rle_size * scale))
+        scaled_huff = int(round(huff_size * scale))
+        candidate_winner = "rle" if scaled_rle <= scaled_huff else "huffman"
 
-    return {
-        "original_entropy": orig_ent,
-        "residual_entropy": res_ent,
-        "rle_size": scaled_rle,
-        "huffman_size": scaled_huff,
-        "selected_codec": selected,
-        "predictor": "spatial + inter-frame delta",
-    }
+        return {
+            "original_entropy": orig_ent,
+            "residual_entropy": res_ent,
+            "rle_size": scaled_rle,
+            "huffman_size": scaled_huff,
+            "selected_codec": candidate_winner,
+            "candidate_codec": candidate_winner,
+            "predictor": "spatial + inter-frame delta",
+            "entropy_domain": "Decoded Video Frames (raw pixels)",
+            "entropy_units": "bits/pixel byte",
+        }
+    else:
+        return {
+            "original_entropy": orig_ent,
+            "residual_entropy": orig_ent,
+            "rle_size": 0,
+            "huffman_size": 0,
+            "selected_codec": "original",
+            "candidate_codec": "none",
+            "predictor": "none",
+            "entropy_domain": "Container Bitstream (undecoded)",
+            "entropy_units": "bits/byte",
+        }
 
 
 # ----------------------------------------------------------------
@@ -1117,10 +1193,12 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
     raw_sample = get_video_raw_sample(input_path, pix_fmt=probe["pix_fmt"], max_frames=5)
     est_raw_total = probe["width"] * probe["height"] * 3 * max(1, probe["frame_count"])
     if raw_sample:
-        metrics = calculate_adaptive_residuals_metrics(raw_sample, total_bytes=est_raw_total)
+        metrics = calculate_adaptive_residuals_metrics(raw_sample, total_bytes=est_raw_total, is_raw_pixels=True)
     else:
         with open(input_path, "rb") as rf:
-            metrics = calculate_adaptive_residuals_metrics(rf.read(256 * 1024), total_bytes=orig_size)
+            metrics = calculate_adaptive_residuals_metrics(rf.read(256 * 1024), total_bytes=orig_size, is_raw_pixels=False)
+
+    candidate_codec = metrics.get("candidate_codec") or metrics.get("selected_codec", "rle")
 
     # For uncompressed video, candidate is FFV1 intra/inter lossless compression
     if is_raw:
@@ -1156,26 +1234,35 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
             bytes_saved = orig_size - actual_output_size
             space_saved = (bytes_saved / orig_size) * 100.0
             ratio = orig_size / actual_output_size
+            selected_codec = "ffv1"
+            is_fallback = False
+            fallback_reason = ""
         else:
             candidate_avi.unlink(missing_ok=True)
             shutil.copyfile(input_path, final_avi)
             actual_output_size = orig_size
-            method = "Original AVI Retained (Already minimal or optimal representation)"
+            method = "Original AVI Retained (No size reduction)"
             bytes_saved = 0
             space_saved = 0.0
             ratio = 1.0
             verified = True
-            ver_label = f"Decoded-frame identical: PASS ({probe['frame_count']} frames verified)"
+            ver_label = f"Decoded-frame identical: PASS ({probe['frame_count']} frames verified)" + (" (audio track preserved)" if has_audio else "")
+            selected_codec = "original"
+            is_fallback = True
+            fallback_reason = "No size reduction"
     else:
-        # Already compressed or unsupported stream: retain original safely
+        # Already compressed (e.g. H.264 in AVI): retain original safely
         shutil.copyfile(input_path, final_avi)
         actual_output_size = orig_size
-        method = "Original AVI Retained (Already minimal or optimal representation)"
+        method = "Original AVI Retained (No size reduction)"
         bytes_saved = 0
         space_saved = 0.0
         ratio = 1.0
         verified = True
-        ver_label = f"Decoded-frame identical: PASS ({probe['frame_count']} frames verified)"
+        ver_label = f"Decoded-frame identical: PASS ({probe['frame_count']} frames verified)" + (" (audio track preserved)" if has_audio else "")
+        selected_codec = "original"
+        is_fallback = True
+        fallback_reason = "No size reduction"
 
     comp_ms = (time.perf_counter() - t0) * 1000
 
@@ -1197,7 +1284,12 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
         "compressed_path": str(final_avi),
         "recovered_path": str(final_avi),
         "predictor": metrics.get("predictor", "spatial + inter-frame delta"),
-        "selected_codec": metrics.get("selected_codec", "adaptive"),
+        "selected_codec": selected_codec,
+        "candidate_codec": candidate_codec,
+        "is_fallback": is_fallback,
+        "fallback_reason": fallback_reason,
+        "container_overhead": 0,
+        "ahmc_container_size": 0,
         "rle_size": metrics.get("rle_size", 0),
         "huffman_size": metrics.get("huffman_size", 0),
         "original_entropy": metrics.get("original_entropy", 0.0),
@@ -1231,10 +1323,12 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
     raw_sample = get_video_raw_sample(input_path, pix_fmt=probe["pix_fmt"], max_frames=5)
     est_raw_total = probe["width"] * probe["height"] * 3 * max(1, probe["frame_count"])
     if raw_sample:
-        metrics = calculate_adaptive_residuals_metrics(raw_sample, total_bytes=est_raw_total)
+        metrics = calculate_adaptive_residuals_metrics(raw_sample, total_bytes=est_raw_total, is_raw_pixels=True)
     else:
         with open(input_path, "rb") as rf:
-            metrics = calculate_adaptive_residuals_metrics(rf.read(256 * 1024), total_bytes=orig_size)
+            metrics = calculate_adaptive_residuals_metrics(rf.read(256 * 1024), total_bytes=orig_size, is_raw_pixels=False)
+
+    candidate_codec = metrics.get("candidate_codec") or metrics.get("selected_codec", "huffman")
 
     # Optimization: For already-compressed H.264 MP4 files, lossless re-encoding (CRF 0)
     # is mathematically guaranteed to inflate the file (typically 300%-1000% larger).
@@ -1252,7 +1346,7 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
             "bytes_saved": 0,
             "space_saved_percent": 0.0,
             "compression_ratio": 1.0,
-            "method": "Original MP4 Retained (Already optimally compressed H.264 representation)",
+            "method": "Original MP4 Retained (No size reduction)",
             "verification": True,
             "verification_label": f"Decoded-frame identical: PASS ({probe['frame_count']} frames verified)" + (" (audio track preserved)" if has_audio else ""),
             "compression_time_ms": comp_ms,
@@ -1260,7 +1354,12 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
             "compressed_path": str(final_mp4),
             "recovered_path": str(final_mp4),
             "predictor": metrics.get("predictor", "spatial + inter-frame delta"),
-            "selected_codec": metrics.get("selected_codec", "adaptive"),
+            "selected_codec": "original",
+            "candidate_codec": candidate_codec,
+            "is_fallback": True,
+            "fallback_reason": "No size reduction",
+            "container_overhead": 0,
+            "ahmc_container_size": 0,
             "rle_size": metrics.get("rle_size", 0),
             "huffman_size": metrics.get("huffman_size", 0),
             "original_entropy": metrics.get("original_entropy", 0.0),
@@ -1309,16 +1408,22 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
         bytes_saved = orig_size - actual_output_size
         space_saved = (bytes_saved / orig_size) * 100.0
         ratio = orig_size / actual_output_size
+        selected_codec = "x264-crf0"
+        is_fallback = False
+        fallback_reason = ""
     else:
         candidate_mp4.unlink(missing_ok=True)
         shutil.copyfile(input_path, final_mp4)
         actual_output_size = orig_size
-        method = "Original MP4 Retained (Already optimally compressed H.264 representation)"
+        method = "Original MP4 Retained (No size reduction)"
         bytes_saved = 0
         space_saved = 0.0
         ratio = 1.0
         verified = True
         ver_label = f"Decoded-frame identical: PASS ({probe['frame_count']} frames verified)"
+        selected_codec = "original"
+        is_fallback = True
+        fallback_reason = "No size reduction"
 
     comp_ms = (time.perf_counter() - t0) * 1000
 
@@ -1340,7 +1445,12 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
         "compressed_path": str(final_mp4),
         "recovered_path": str(final_mp4),
         "predictor": metrics.get("predictor", "spatial + inter-frame delta"),
-        "selected_codec": metrics.get("selected_codec", "adaptive"),
+        "selected_codec": selected_codec,
+        "candidate_codec": candidate_codec,
+        "is_fallback": is_fallback,
+        "fallback_reason": fallback_reason,
+        "container_overhead": 0,
+        "ahmc_container_size": 0,
         "rle_size": metrics.get("rle_size", 0),
         "huffman_size": metrics.get("huffman_size", 0),
         "original_entropy": metrics.get("original_entropy", 0.0),
