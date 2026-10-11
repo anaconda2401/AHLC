@@ -326,8 +326,8 @@ Expected: **ALL PASS** on all suites.
 | PNG | ✅ | ✅ | Lossless DEFLATE L9 + adaptive filtering |
 | WAV PCM 16/24/32-bit | ✅ | ✅ | Sample-identical verification |
 | FLAC | ✅ | ✅ | Sample-identical verification |
-| AVI | ✅ | ✅ | Decoded-frame identical verification (FFV1 lossless / rawvideo) |
-| MP4 | ✅ | ✅ | Decoded-frame identical verification (H.264 lossless CRF 0) |
+| AVI | ✅ | ✅ | Decoded-frame identical verification (FFV1 multithreaded / zero-disk framemd5) |
+| MP4 | ✅ | ✅ | Decoded-frame identical verification (honest retention for compressed input, zero-disk verify) |
 
 ---
 
@@ -351,7 +351,7 @@ reported correctly when the AHMC file is larger than the original.
 
 - `werkzeug.utils.secure_filename()` on all uploads
 - Extension allow-list: `.bmp`, `.png`, `.wav`, `.flac`, `.avi`, `.mp4` only
-- `MAX_CONTENT_LENGTH = 100 MB`
+- `MAX_CONTENT_LENGTH = 100 MB` (Configurable 50 MB demo limit for video uploads via `AHLC_MAX_VIDEO_MB`)
 - UUID-prefixed filenames (no path traversal)
 - `subprocess` always uses argument lists — `shell=False`
 - Uploads stored outside `templates/` and `static/`

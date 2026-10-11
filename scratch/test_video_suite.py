@@ -346,5 +346,38 @@ class TestVideoCompressionSuite(unittest.TestCase):
         print("  Honest retention verified: 0 fake reduction reported.")
 
 
+    # ----------------------------------------------------------------
+    # Requirement 11: 50 MB video upload limit enforcement
+    # ----------------------------------------------------------------
+    def test_11_max_video_upload_limit(self):
+        print("\n[Test 11] 50 MB maximum video upload size enforcement...")
+        client = app.test_client()
+
+        # Create a dummy 51 MB in-memory video stream exceeding the 50 MB limit
+        large_size = 51 * 1024 * 1024
+        oversized_data = io.BytesIO(b"\x00" * large_size)
+
+        resp = client.post(
+            "/compress",
+            data={"file": (oversized_data, "large_demo.mp4")},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Video file exceeds 50 MB demo limit", resp.data)
+        self.assertIn(b"51.0 MB uploaded", resp.data)
+
+        # Also test on /analyze
+        oversized_data2 = io.BytesIO(b"\x00" * large_size)
+        a_resp = client.post(
+            "/analyze",
+            data={"file": (oversized_data2, "large_demo.avi")},
+            follow_redirects=True,
+        )
+        self.assertEqual(a_resp.status_code, 200)
+        self.assertIn(b"Video file exceeds 50 MB demo limit", a_resp.data)
+        print("  50 MB demo upload limit verified on /compress and /analyze.")
+
+
 if __name__ == "__main__":
     unittest.main()
+

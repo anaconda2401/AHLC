@@ -19,7 +19,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 UPLOAD_DIR   = PROJECT_ROOT / "uploads"
 OUTPUT_DIR   = PROJECT_ROOT / "outputs"
 ALLOWED_EXT  = {"bmp", "png", "wav", "flac", "avi", "mp4"}
-MAX_UPLOAD   = 100 * 1024 * 1024  # 100 MB
+MAX_VIDEO_UPLOAD_MB = int(os.environ.get("AHLC_MAX_VIDEO_MB", 50))
+MAX_VIDEO_UPLOAD    = MAX_VIDEO_UPLOAD_MB * 1024 * 1024  # 50 MB demo limit
+MAX_UPLOAD          = int(os.environ.get("AHLC_MAX_UPLOAD_MB", 100)) * 1024 * 1024
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -84,8 +86,16 @@ def do_analyze():
 
     sid = uuid.uuid4().hex
     safe = secure_filename(f.filename)
+    ext  = safe.rsplit(".", 1)[1].lower() if "." in safe else ""
     upload_path = UPLOAD_DIR / f"{sid}_{safe}"
     f.save(str(upload_path))
+
+    file_size = upload_path.stat().st_size
+    if ext in ("avi", "mp4") and file_size > MAX_VIDEO_UPLOAD:
+        upload_path.unlink(missing_ok=True)
+        size_mb = file_size / (1024 * 1024)
+        flash(f"Video file exceeds {MAX_VIDEO_UPLOAD_MB} MB demo limit ({size_mb:.1f} MB uploaded). Please upload a video under {MAX_VIDEO_UPLOAD_MB} MB.", "error")
+        return redirect(url_for("analyze_page"))
 
     data = runner.analyze_media(upload_path)
     upload_path.unlink(missing_ok=True)
@@ -117,6 +127,13 @@ def do_compress():
     upload_path = UPLOAD_DIR / f"{sid}_{safe}"
     output_path = OUTPUT_DIR / f"{sid}_compressed.{ext}"
     f.save(str(upload_path))
+
+    file_size = upload_path.stat().st_size
+    if ext in ("avi", "mp4") and file_size > MAX_VIDEO_UPLOAD:
+        upload_path.unlink(missing_ok=True)
+        size_mb = file_size / (1024 * 1024)
+        flash(f"Video file exceeds {MAX_VIDEO_UPLOAD_MB} MB demo limit ({size_mb:.1f} MB uploaded). Please upload a video under {MAX_VIDEO_UPLOAD_MB} MB.", "error")
+        return redirect(url_for("dashboard"))
 
     data = runner.compress_media(upload_path, output_path)
 
@@ -225,7 +242,7 @@ def not_found(_):
 
 @app.errorhandler(413)
 def too_large(_):
-    flash("File too large (max 100 MB).", "error")
+    flash(f"File exceeds maximum upload size ({MAX_UPLOAD // (1024 * 1024)} MB limit).", "error")
     return redirect(url_for("dashboard"))
 
 

@@ -42,6 +42,11 @@ function setupDropZone(zoneId, inputId, nameId, selectedId) {
       zone.classList.remove('drag-over');
       return;
     }
+    if (['avi', 'mp4'].includes(ext) && file.size > 50 * 1024 * 1024) {
+      alert('Video file exceeds 50 MB demo limit (' + (file.size / (1024 * 1024)).toFixed(1) + ' MB). Please choose a video under 50 MB.');
+      zone.classList.remove('drag-over');
+      return;
+    }
     // Inject the dropped file into the input
     const dt = new DataTransfer();
     dt.items.add(file);
@@ -71,23 +76,33 @@ function setupCompressForm() {
       alert('Only .bmp, .png, .wav, .flac, .avi, and .mp4 files are supported.');
       return;
     }
+    if (['avi', 'mp4'].includes(ext) && input.files[0].size > 50 * 1024 * 1024) {
+      e.preventDefault();
+      alert('Video file exceeds 50 MB demo limit (' + (input.files[0].size / (1024 * 1024)).toFixed(1) + ' MB). Please choose a video under 50 MB.');
+      return;
+    }
 
     // Show progress UI
     const btn = document.getElementById('compress-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
     if (progBar) progBar.style.display = 'block';
 
-    // Animate progress steps
+    // Animate progress steps: Analyzing -> Processing -> Verifying -> Complete
+    const steps = ['step-upload', 'step-analyze', 'step-process', 'step-verify', 'step-complete'];
     let idx = 0;
-    const durations = [300, 600, 1200, 600]; // ms per step
+    const durations = [200, 350, 600, 400, 300]; // ms per step
     function nextStep() {
       if (idx < steps.length) {
+        if (idx > 0) {
+          const prevEl = document.getElementById(steps[idx - 1]);
+          if (prevEl) { prevEl.classList.remove('active'); prevEl.classList.add('done'); }
+        }
         const el = document.getElementById(steps[idx]);
         if (el) el.classList.add('active');
         const pct = ((idx + 1) / steps.length) * 100;
         if (fill) fill.style.width = pct + '%';
         idx++;
-        setTimeout(nextStep, durations[idx - 1] || 500);
+        setTimeout(nextStep, durations[idx - 1] || 400);
       }
     }
     nextStep();
