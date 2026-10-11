@@ -26,7 +26,8 @@ _deps/
 *.exp
 *.lib
 vcpkg_installed/
-scratch/
+scratch/*
+!scratch/*.py
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/

@@ -46,6 +46,11 @@ def init_db():
             sample_rate          INTEGER,
             bits_per_sample      INTEGER,
             duration_seconds     REAL,
+            -- Video-specific
+            fps                  REAL,
+            frame_count          INTEGER,
+            video_codec          TEXT,
+            has_audio            INTEGER,
             -- File paths
             original_path        TEXT,
             compressed_path      TEXT,
@@ -53,6 +58,12 @@ def init_db():
             created_at           TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        # Ensure new video columns exist if upgrading an existing DB
+        cols = {row["name"] for row in con.execute("PRAGMA table_info(experiments)").fetchall()}
+        for col, col_type in [("fps", "REAL"), ("frame_count", "INTEGER"),
+                              ("video_codec", "TEXT"), ("has_audio", "INTEGER")]:
+            if col not in cols:
+                con.execute(f"ALTER TABLE experiments ADD COLUMN {col} {col_type}")
 
 
 def save_experiment(session_id: str, filename: str, data: dict,
@@ -70,8 +81,9 @@ def save_experiment(session_id: str, filename: str, data: dict,
             compression_time_ms, decompression_time_ms, verification,
             width, height, bpp,
             channels, sample_rate, bits_per_sample, duration_seconds,
+            fps, frame_count, video_codec, has_audio,
             original_path, compressed_path, recovered_path
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             session_id, filename, media,
             data.get("original_size"), data.get("compressed_size"),
@@ -84,6 +96,8 @@ def save_experiment(session_id: str, filename: str, data: dict,
             data.get("width"), data.get("height"), data.get("bpp"),
             data.get("channels"), data.get("sample_rate"),
             data.get("bits_per_sample"), data.get("duration_seconds"),
+            data.get("fps"), data.get("frame_count"),
+            data.get("video_codec"), 1 if data.get("has_audio") else 0,
             original_path, compressed_path, recovered_path,
         ))
         return cur.lastrowid
@@ -110,8 +124,11 @@ def get_dashboard_stats() -> dict:
         pngs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.png' OR media_type='png'").fetchone()[0]
         wavs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.wav' OR media_type='wav'").fetchone()[0]
         flacs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.flac' OR media_type='flac'").fetchone()[0]
+        avis = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.avi' OR media_type='avi'").fetchone()[0]
+        mp4s = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.mp4' OR media_type='mp4'").fetchone()[0]
         images = bmps + pngs
         audio = wavs + flacs
+        videos = avis + mp4s
         avg_r = con.execute("SELECT AVG(compression_ratio) FROM experiments WHERE compression_ratio IS NOT NULL").fetchone()[0]
         saved = con.execute("SELECT SUM(original_size - compressed_size) FROM experiments WHERE original_size >= compressed_size").fetchone()[0]
         ver_ok = con.execute("SELECT COUNT(*) FROM experiments WHERE verification=1").fetchone()[0]
@@ -125,8 +142,11 @@ def get_dashboard_stats() -> dict:
         "pngs": pngs,
         "wavs": wavs,
         "flacs": flacs,
+        "avis": avis,
+        "mp4s": mp4s,
         "images": images,
         "audio": audio,
+        "videos": videos,
         "avg_ratio": round(avg_r, 3) if avg_r else 0.0,
         "total_saved_bytes": saved or 0,
         "verification_rate": round(ver_rt, 1),

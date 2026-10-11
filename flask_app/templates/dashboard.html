@@ -33,6 +33,13 @@
     <div class="stat-label">Audio (WAV/FLAC)</div>
   </div>
   <div class="stat-card">
+    <div class="stat-icon icon-red">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="17" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+    </div>
+    <div class="stat-value">{{ stats.videos if stats.videos is defined else (stats.avis + stats.mp4s) }}</div>
+    <div class="stat-label">Video (AVI/MP4)</div>
+  </div>
+  <div class="stat-card">
     <div class="stat-icon icon-orange">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
     </div>
@@ -58,12 +65,12 @@
 <!-- ===== Upload Zone ===== -->
 <div class="section-header">
   <h2 class="section-title">Compress Multimedia</h2>
-  <p class="section-sub">Lossless compression for BMP, PNG, WAV, and FLAC with bit-identical / sample-identical verification</p>
+  <p class="section-sub">Lossless compression for BMP, PNG, WAV, FLAC, AVI, and MP4 with bit-identical / frame-identical verification</p>
 </div>
 
 <form id="compress-form" action="{{ url_for('do_compress') }}" method="post" enctype="multipart/form-data">
   <div class="upload-zone" id="drop-zone">
-    <input type="file" id="file-input" name="file" accept=".bmp,.png,.wav,.flac" style="display:none"/>
+    <input type="file" id="file-input" name="file" accept=".bmp,.png,.wav,.flac,.avi,.mp4" style="display:none"/>
     <div class="upload-icon">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <polyline points="16 16 12 12 8 16"/>
@@ -72,7 +79,7 @@
       </svg>
     </div>
     <div class="upload-text">
-      <p class="upload-main">Drop Image or Audio File Here</p>
+      <p class="upload-main">Drop Image, Audio, or Video File Here</p>
       <p class="upload-hint">or <button type="button" class="upload-browse" onclick="document.getElementById('file-input').click()">Browse Files</button></p>
     </div>
     <div class="upload-types">
@@ -80,6 +87,8 @@
       <span class="type-badge">PNG</span>
       <span class="type-badge">WAV</span>
       <span class="type-badge">FLAC</span>
+      <span class="type-badge">AVI</span>
+      <span class="type-badge">MP4</span>
     </div>
     <div id="file-selected" class="file-selected" style="display:none">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
@@ -147,7 +156,7 @@
   <div class="empty-icon">
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
   </div>
-  <p>No experiments yet. Upload a BMP, PNG, WAV, or FLAC file to get started.</p>
+  <p>No experiments yet. Upload a BMP, PNG, WAV, FLAC, AVI, or MP4 file to get started.</p>
 </div>
 {% endif %}
 {% endblock %}

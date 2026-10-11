@@ -1,5 +1,5 @@
 """
-app.py  —  AHLC Image Compression Dashboard (BMP & PNG)
+app.py  —  AHLC Multimedia Compression Dashboard (BMP, PNG, WAV, FLAC, AVI, MP4)
 Run with:  python flask_app/app.py
 """
 import os
@@ -18,7 +18,7 @@ import database as db
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 UPLOAD_DIR   = PROJECT_ROOT / "uploads"
 OUTPUT_DIR   = PROJECT_ROOT / "outputs"
-ALLOWED_EXT  = {"bmp", "png", "wav", "flac"}
+ALLOWED_EXT  = {"bmp", "png", "wav", "flac", "avi", "mp4"}
 MAX_UPLOAD   = 100 * 1024 * 1024  # 100 MB
 
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -79,7 +79,7 @@ def do_analyze():
         flash("No file selected.", "error")
         return redirect(url_for("analyze_page"))
     if not _allowed(f.filename):
-        flash("Only .bmp, .png, .wav, and .flac files are supported.", "error")
+        flash("Only .bmp, .png, .wav, .flac, .avi, and .mp4 files are supported.", "error")
         return redirect(url_for("analyze_page"))
 
     sid = uuid.uuid4().hex
@@ -107,7 +107,7 @@ def do_compress():
         flash("No file selected.", "error")
         return redirect(url_for("dashboard"))
     if not _allowed(f.filename):
-        flash("Only .bmp, .png, .wav, and .flac files are supported.", "error")
+        flash("Only .bmp, .png, .wav, .flac, .avi, and .mp4 files are supported.", "error")
         return redirect(url_for("dashboard"))
 
     sid  = uuid.uuid4().hex
@@ -174,6 +174,7 @@ def report(exp_id):
 @app.route("/download/<int:exp_id>/file")
 @app.route("/download/<int:exp_id>/image")
 @app.route("/download/<int:exp_id>/audio")
+@app.route("/download/<int:exp_id>/video")
 @app.route("/download/<int:exp_id>/compressed")
 @app.route("/download/<int:exp_id>/recovered")
 def download_image(exp_id):
@@ -194,6 +195,8 @@ def download_image(exp_id):
         "png": "image/png",
         "wav": "audio/wav",
         "flac": "audio/flac",
+        "avi": "video/x-msvideo",
+        "mp4": "video/mp4",
     }
     mimetype = mime_map.get(ext, "application/octet-stream")
     return send_file(
@@ -231,7 +234,7 @@ def too_large(_):
 # ================================================================
 if __name__ == "__main__":
     print("\n" + "=" * 50)
-    print("  AHLC Multimedia Compression Dashboard (BMP, PNG, WAV, FLAC)")
+    print("  AHLC Multimedia Compression Dashboard (BMP, PNG, WAV, FLAC, AVI, MP4)")
     print("  Running at http://127.0.0.1:5000")
     print("=" * 50 + "\n")
     app.run(debug=True, host="127.0.0.1", port=5000)

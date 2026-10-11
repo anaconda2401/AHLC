@@ -12,11 +12,12 @@
 {% set saved = exp.space_saved_percent or 0.0 %}
 {% set verified = exp.verification %}
 {% set ext = exp.filename.split('.')[-1]|upper %}
+{% set is_video = (exp.media_type == 'video') or (ext in ['AVI', 'MP4']) %}
 {% set is_audio = (exp.media_type == 'audio') or (ext in ['WAV', 'FLAC']) %}
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">{{ 'Audio' if is_audio else 'Image' }} Compression Result</h1>
+    <h1 class="page-title">{{ 'Video' if is_video else ('Audio' if is_audio else 'Image') }} Compression Result</h1>
     <p class="page-sub">{{ exp.filename }} · {{ ext }} · Experiment #{{ exp.id }}</p>
   </div>
   <div class="header-actions">
@@ -60,7 +61,7 @@
     <div class="hero-value {% if ratio > 1 %}accent{% else %}muted{% endif %}">{{ "%.3f"|format(ratio) }}x</div>
   </div>
   <div class="hero-stat verify-hero">
-    <div class="hero-label">{{ 'Sample' if is_audio else 'Pixel' }} Lossless Verify</div>
+    <div class="hero-label">{{ 'Frame' if is_video else ('Sample' if is_audio else 'Pixel') }} Lossless Verify</div>
     <div class="hero-value {% if verified %}verify-pass{% else %}verify-fail{% endif %}">
       {% if verified %}✓ PASS{% else %}✗ FAIL{% endif %}
     </div>
@@ -69,7 +70,7 @@
 
 {% if saved <= 0 %}
 <div class="alert-info" style="margin-bottom:1.5rem;padding:0.85rem 1.25rem;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#8b949e">
-  ℹ️ <strong>Honest Reporting:</strong> The original file is already at minimal uncompressed or optimal compression representation. The output file retains 100% exact {{ 'audio samples' if is_audio else 'pixels' }} with 0 bytes overhead.
+  ℹ️ <strong>Honest Reporting:</strong> The original file is already at minimal uncompressed or optimal compression representation. The output file retains 100% exact {{ 'decoded video frames' if is_video else ('audio samples' if is_audio else 'pixels') }} with 0 bytes overhead.
 </div>
 {% endif %}
 
@@ -83,13 +84,35 @@
         <div class="info-row"><span>Original Filename</span><span class="mono">{{ exp.filename }}</span></div>
         <div class="info-row"><span>Format</span><span class="type-badge">{{ ext }}</span></div>
         <div class="info-row"><span>Method Used</span><span class="mono">{{ (exp.selected_codec or 'Adaptive')|upper }}</span></div>
-        <div class="info-row"><span>Lossless Status</span><span class="mono text-green">{{ 'Sample-identical verification: PASS' if is_audio else 'Pixel-identical verification: PASS' }}</span></div>
+        <div class="info-row"><span>Lossless Status</span><span class="mono text-green">{{ 'Decoded-frame identical: PASS' if is_video else ('Sample-identical verification: PASS' if is_audio else 'Pixel-identical verification: PASS') }}</span></div>
         <div class="info-row"><span>Processing Time</span><span class="mono">{{ "%.1f"|format(exp.compression_time_ms or 0) }} ms</span></div>
         <div class="info-row"><span>Output Download Format</span><span class="mono">Valid standard .{{ exp.filename.split('.')[-1].lower() }}</span></div>
       </div>
     </div>
 
-    {% if is_audio %}
+    {% if is_video %}
+    <div class="info-card">
+      <div class="info-card-title">Video Stream Properties &amp; Metadata</div>
+      <div class="info-rows">
+        <div class="info-row"><span>Video Codec</span><span class="mono">{{ exp.video_codec or 'N/A' }}</span></div>
+        <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} px</span></div>
+        <div class="info-row"><span>Frame Rate</span><span class="mono">{{ "%.2f"|format(exp.fps or 0) }} fps</span></div>
+        <div class="info-row"><span>Frame Count</span><span class="mono">{{ exp.frame_count or 'N/A' }}</span></div>
+        {% if exp.duration_seconds %}
+        <div class="info-row"><span>Duration</span><span>{{ "%.3f"|format(exp.duration_seconds) }} s</span></div>
+        {% endif %}
+        <div class="info-row"><span>Audio Track</span>
+          {% if exp.has_audio %}
+          <span class="badge badge-audio">PRESENT (Preserved)</span>
+          {% else %}
+          <span class="type-badge">NONE</span>
+          {% endif %}
+        </div>
+        <div class="info-row"><span>Original Entropy</span><span class="mono">{{ "%.4f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
+        <div class="info-row"><span>Residual Entropy</span><span class="mono">{{ "%.4f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
+      </div>
+    </div>
+    {% elif is_audio %}
     <div class="info-card">
       <div class="info-card-title">Audio Properties &amp; Metadata</div>
       <div class="info-rows">
@@ -123,7 +146,7 @@
     <div class="info-card">
       <div class="info-card-title">AHLC Research Predictor Metrics</div>
       <div class="info-rows">
-        <div class="info-row"><span>Predictor</span><span class="mono">{{ 'Delta (C++)' if is_audio else 'Left-Neighbour (C++)' }}</span></div>
+        <div class="info-row"><span>Predictor</span><span class="mono">{{ 'Spatial + Inter-frame Delta' if is_video else ('Delta (C++)' if is_audio else 'Left-Neighbour (C++)') }}</span></div>
         <div class="info-row"><span>RLE Candidate Payload</span><span>{{ fmt_bytes(exp.rle_size) }}</span></div>
         <div class="info-row"><span>Huffman Candidate Payload</span><span>{{ fmt_bytes(exp.huffman_size) }}</span></div>
         <div class="info-row"><span>Selected Adaptive Codec</span><span class="codec-badge codec-lg">{{ (exp.selected_codec or '—')|upper }}</span></div>

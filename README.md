@@ -14,6 +14,7 @@ with a professional Flask web dashboard for demonstration, analysis, and verific
 Supported media formats:
 - **Images:** BMP (`.bmp`) and PNG (`.png`)
 - **Audio:** WAV (`.wav`) and FLAC (`.flac`)
+- **Video:** AVI (`.avi`) and MP4 (`.mp4`)
 
 The engine automatically selects the best compression codec for each input by
 analysing its statistical properties — no manual tuning required.
@@ -21,13 +22,13 @@ analysing its statistical properties — no manual tuning required.
 **Adaptive Multimedia Pipeline:**
 
 ```
-Input Media (BMP / PNG / WAV / FLAC)
+Input Media (BMP / PNG / WAV / FLAC / AVI / MP4)
         ↓
   Format Abstraction / Decoding to Raw Data
-  (BMP/PNG -> Raw pixels; WAV/FLAC -> Raw PCM samples)
+  (BMP/PNG -> Raw pixels; WAV/FLAC -> Raw PCM samples; AVI/MP4 -> Raw video frames)
         ↓
   Media-specific Predictor
-  (Spatial left-neighbour for image, delta for audio)
+  (Spatial left-neighbour for image, delta for audio, spatial + inter-frame delta for video)
         ↓
   Residual Stream
         ↓
@@ -38,11 +39,11 @@ Input Media (BMP / PNG / WAV / FLAC)
                     ↓
            Select smaller payload
                     ↓
-           AHMC v2 Container / Optimized Format
+           Container / Reconstruction (FFV1 for AVI, CRF 0 for MP4)
                     ↓
          Decompress / Reconstruct Media
                     ↓
-    Exact Lossless Verification (Sample / Pixel identical)
+    Exact Lossless Verification (Sample / Pixel / Frame identical)
 ```
 
 ---
@@ -123,6 +124,7 @@ AHLC/
 | 5B | Adaptive Codec Selection (RLE vs Huffman) | ✅ Complete |
 | 6 | FFmpeg Integration & Format Abstraction Layer | ✅ Complete |
 | 7 | WAV & FLAC Audio Compression & Flask Integration | ✅ Complete |
+| 8 | AVI & MP4 Video Support & Lossless Frame Verification | ✅ Complete |
 
 ---
 
@@ -160,18 +162,20 @@ Open **http://127.0.0.1:5000**
 
 | URL | Page |
 |-----|------|
-| `/` | Main dashboard — stats cards + BMP, PNG, WAV, FLAC upload |
+| `/` | Main dashboard — stats cards + BMP, PNG, WAV, FLAC, AVI, MP4 upload |
 | `/analyze` | Analyze media (entropy, metadata) without compressing |
 | `/result/<id>` | Compression result with metadata + Chart.js charts |
 | `/history` | Full experiment history table |
 | `/report/<id>` | 9-section research report + pipeline diagram |
-| `/download/<id>` | Download valid audio/image file (`.bmp`, `.png`, `.wav`, or `.flac`) |
+| `/download/<id>` | Download valid video/audio/image file (`.bmp`, `.png`, `.wav`, `.flac`, `.avi`, or `.mp4`) |
 
 The Flask layer coordinates format handling and verification:
-- For WAV: passes through the C++ AHLC audio compression engine (`audio-compress` / `audio-decompress`) and reconstructs standard PCM WAV.
-- For FLAC: decodes FLAC to PCM -> processes through AHLC audio prediction & adaptive coding -> reconstructs PCM -> encodes to standard valid FLAC.
-- Decoded samples and audio metadata are verified 100% losslessly (`soundfile` + C++ `audio-verify`).
-- When input is already optimal (e.g. FLAC), honest reporting is displayed (0 B saved, 1.00x ratio, original retained).
+- **For WAV:** passes through the C++ AHLC audio compression engine (`audio-compress` / `audio-decompress`) and reconstructs standard PCM WAV.
+- **For FLAC:** decodes FLAC to PCM -> processes through AHLC audio prediction & adaptive coding -> reconstructs PCM -> encodes to standard valid FLAC.
+- **For AVI:** prioritizes uncompressed/rawvideo streams, runs spatial and temporal prediction + RLE/Huffman simulation, reconstructs mathematically lossless intra/inter video via FFV1 in AVI container (or retains original if minimal), and verifies bit-identical decoded raw frames across all frames.
+- **For MP4:** targets H.264 video streams, decodes raw pixel frames, computes spatial/temporal residual entropy, generates candidate lossless H.264 (CRF 0), compares sizes honestly against input, retains original MP4 if CRF 0 is larger (0 B saved, 1.00x ratio), and verifies 100% pixel-identical decoded frame equality.
+- **Audio stream preservation:** detects audio track presence and preserves audio streams via streamcopy (`-c:a copy`), verifying audio equality.
+- Decoded samples, pixels, and video frames are verified 100% losslessly.
 
 ---
 
@@ -275,6 +279,11 @@ All test suites run self-contained without external test files:
 .\build\Release\ahmc.exe image-adaptive-test # Adaptive codec selection + verify
 .\build\Release\ahmc.exe audio-test          # 7 WAV round-trip cases
 .\build\Release\ahmc.exe audio-adaptive-test # Adaptive codec selection + verify
+.\build\Release\ahmc.exe ffmpeg-test         # FFmpeg library linkage & version
+.\build\Release\ahmc.exe format-test         # C++ Format abstraction layer
+
+# Master test runner (C++, Image, Audio, Video):
+.\.venv\Scripts\python.exe scratch\run_all_tests.py
 ```
 
 Expected: **ALL PASS** on all suites.
@@ -313,10 +322,12 @@ Expected: **ALL PASS** on all suites.
 
 | Format | Read | Write | Notes |
 |--------|------|-------|-------|
-| BMP 24-bit | ✅ | ✅ | Top-down and bottom-up |
-| BMP 32-bit | ✅ | ✅ | Alpha channel preserved |
-| WAV PCM 16-bit mono | ✅ | ✅ | Any sample rate |
-| WAV PCM 16-bit stereo | ✅ | ✅ | De-interleaved prediction |
+| BMP 24-bit / 32-bit | ✅ | ✅ | Pixel-identical verification |
+| PNG | ✅ | ✅ | Lossless DEFLATE L9 + adaptive filtering |
+| WAV PCM 16/24/32-bit | ✅ | ✅ | Sample-identical verification |
+| FLAC | ✅ | ✅ | Sample-identical verification |
+| AVI | ✅ | ✅ | Decoded-frame identical verification (FFV1 lossless / rawvideo) |
+| MP4 | ✅ | ✅ | Decoded-frame identical verification (H.264 lossless CRF 0) |
 
 ---
 
@@ -339,7 +350,7 @@ reported correctly when the AHMC file is larger than the original.
 ## Security (Flask Dashboard)
 
 - `werkzeug.utils.secure_filename()` on all uploads
-- Extension allow-list: `.bmp` and `.wav` only
+- Extension allow-list: `.bmp`, `.png`, `.wav`, `.flac`, `.avi`, `.mp4` only
 - `MAX_CONTENT_LENGTH = 100 MB`
 - UUID-prefixed filenames (no path traversal)
 - `subprocess` always uses argument lists — `shell=False`

@@ -37,8 +37,8 @@ function setupDropZone(zoneId, inputId, nameId, selectedId) {
     const file = e.dataTransfer.files[0];
     if (!file) return;
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['bmp','png','wav','flac'].includes(ext)) {
-      alert('Unsupported format. Please upload a .bmp, .png, .wav, or .flac file.');
+    if (!['bmp','png','wav','flac','avi','mp4'].includes(ext)) {
+      alert('Unsupported format. Please upload a .bmp, .png, .wav, .flac, .avi, or .mp4 file.');
       zone.classList.remove('drag-over');
       return;
     }
@@ -66,9 +66,9 @@ function setupCompressForm() {
 
     // Validate extension
     const ext = input.files[0].name.split('.').pop().toLowerCase();
-    if (!['bmp','png','wav','flac'].includes(ext)) {
+    if (!['bmp','png','wav','flac','avi','mp4'].includes(ext)) {
       e.preventDefault();
-      alert('Only .bmp, .png, .wav, and .flac files are supported.');
+      alert('Only .bmp, .png, .wav, .flac, .avi, and .mp4 files are supported.');
       return;
     }
 

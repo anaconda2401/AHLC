@@ -5,18 +5,18 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Multimedia Analysis</h1>
-    <p class="page-sub">Inspect entropy and metadata for BMP, PNG, WAV, and FLAC files</p>
+    <p class="page-sub">Inspect entropy and metadata for BMP, PNG, WAV, FLAC, AVI, and MP4 files</p>
   </div>
 </div>
 
 <form action="{{ url_for('do_analyze') }}" method="post" enctype="multipart/form-data">
   <div class="upload-zone" id="drop-zone-analyze">
-    <input type="file" id="file-input-analyze" name="file" accept=".bmp,.png,.wav,.flac" style="display:none"/>
+    <input type="file" id="file-input-analyze" name="file" accept=".bmp,.png,.wav,.flac,.avi,.mp4" style="display:none"/>
     <div class="upload-icon">
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     </div>
     <div class="upload-text">
-      <p class="upload-main">Drop Image or Audio File to Analyze</p>
+      <p class="upload-main">Drop Media File to Analyze (Image, Audio, Video)</p>
       <p class="upload-hint">or <button type="button" class="upload-browse" onclick="document.getElementById('file-input-analyze').click()">Browse Files</button></p>
     </div>
     <div class="upload-types">
@@ -24,6 +24,8 @@
       <span class="type-badge">PNG</span>
       <span class="type-badge">WAV</span>
       <span class="type-badge">FLAC</span>
+      <span class="type-badge">AVI</span>
+      <span class="type-badge">MP4</span>
     </div>
     <div id="file-selected-analyze" class="file-selected" style="display:none">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
@@ -43,12 +45,31 @@
   <h2 class="section-title">Analysis: {{ filename }}</h2>
 </div>
 <div class="result-grid">
+  {% set is_video = (result.media_type == 'video') or (filename.split('.')[-1].lower() in ['avi', 'mp4']) %}
   {% set is_audio = (result.media_type == 'audio') or (filename.split('.')[-1].lower() in ['wav', 'flac']) %}
   <div class="info-card">
-    <div class="info-card-title">{{ 'Audio Properties' if is_audio else 'Image Properties' }}</div>
+    <div class="info-card-title">{{ 'Video Properties' if is_video else ('Audio Properties' if is_audio else 'Image Properties') }}</div>
     <div class="info-rows">
       <div class="info-row"><span>Detected Format</span><span class="type-badge">{{ result.format or (filename.split('.')[-1]|upper) }}</span></div>
-      {% if is_audio %}
+      {% if is_video %}
+      <div class="info-row"><span>Video Codec</span><span class="mono">{{ result.video_codec or 'N/A' }}</span></div>
+      <div class="info-row"><span>Dimensions</span><span>{{ result.width }} × {{ result.height }} px</span></div>
+      <div class="info-row"><span>Frame Rate</span><span>{{ "%.2f"|format(result.fps or 0) }} fps</span></div>
+      <div class="info-row"><span>Frame Count</span><span>{{ result.frame_count or 'N/A' }}</span></div>
+      {% if result.duration_seconds %}
+      <div class="info-row"><span>Duration</span><span>{{ "%.3f"|format(result.duration_seconds) }} s</span></div>
+      {% endif %}
+      <div class="info-row"><span>Audio Track</span>
+        {% if result.has_audio %}
+        <span class="badge badge-audio">PRESENT</span>
+        {% else %}
+        <span class="type-badge">NONE</span>
+        {% endif %}
+      </div>
+      {% if result.raw_bytes %}
+      <div class="info-row"><span>Raw Video Size</span><span>{{ fmt_bytes(result.raw_bytes) }}</span></div>
+      {% endif %}
+      {% elif is_audio %}
       <div class="info-row"><span>Channels</span><span>{{ result.channels }}</span></div>
       <div class="info-row"><span>Sample Rate</span><span>{{ result.sample_rate }} Hz</span></div>
       <div class="info-row"><span>Bit Depth</span><span>{{ result.bits_per_sample }}-bit PCM</span></div>

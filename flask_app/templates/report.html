@@ -24,7 +24,15 @@
         <div class="info-row"><span>Filename</span><span class="mono">{{ exp.filename }}</span></div>
         <div class="info-row"><span>Media type</span><span>{{ exp.media_type|upper }}</span></div>
         <div class="info-row"><span>Original file size</span><span>{{ fmt_bytes(exp.original_size) }} ({{ exp.original_size }} bytes)</span></div>
-        {% if exp.media_type == 'image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png'] %}
+        {% set ext_lower = exp.filename.split('.')[-1].lower() %}
+        {% if exp.media_type == 'video' or ext_lower in ['avi', 'mp4'] %}
+        <div class="info-row"><span>Video codec</span><span class="mono">{{ exp.video_codec or 'N/A' }}</span></div>
+        <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} pixels</span></div>
+        <div class="info-row"><span>Frame rate</span><span>{{ "%.2f"|format(exp.fps or 0) }} fps</span></div>
+        <div class="info-row"><span>Frame count</span><span>{{ exp.frame_count or 'N/A' }} frames</span></div>
+        {% if exp.duration_seconds %}<div class="info-row"><span>Duration</span><span>{{ "%.3f"|format(exp.duration_seconds) }} s</span></div>{% endif %}
+        <div class="info-row"><span>Audio track</span><span>{{ 'PRESENT (Preserved via streamcopy)' if exp.has_audio else 'NONE' }}</span></div>
+        {% elif exp.media_type == 'image' or ext_lower in ['bmp', 'png'] %}
         <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} pixels</span></div>
         <div class="info-row"><span>Colour depth</span><span>{{ exp.bpp }} bits per pixel</span></div>
         {% else %}
@@ -62,13 +70,19 @@
     <div class="report-section-body">
       <h2>Prediction Stage</h2>
       <div class="info-rows">
+        {% set ext_lower = exp.filename.split('.')[-1].lower() %}
+        {% set is_vid = (exp.media_type == 'video' or ext_lower in ['avi', 'mp4']) %}
+        {% set is_img = (exp.media_type == 'image' or ext_lower in ['bmp', 'png']) %}
         <div class="info-row"><span>Predictor type</span>
-          <span>{{ "Left-neighbour (per channel byte)" if (exp.media_type == 'image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png']) else "Delta (previous sample, per channel)" }}</span></div>
+          <span>{{ "Spatial + Inter-frame Delta" if is_vid else ("Left-neighbour (per channel byte)" if is_img else "Delta (previous sample, per channel)") }}</span></div>
         <div class="info-row"><span>Predictor ID</span>
           <span class="mono">{{ (exp.predictor or '—')|upper }}</span></div>
       </div>
       <p class="report-note">
-        {% if exp.media_type == 'image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png'] %}
+        {% if is_vid %}
+        The video pipeline applies intra-frame spatial prediction combined with inter-frame temporal differencing across adjacent frames.
+        Residual errors are concentrated near zero, greatly lowering Shannon entropy for subsequent adaptive entropy coding.
+        {% elif is_img %}
         The spatial predictor estimates each channel byte as the same channel byte of the left pixel.
         For pixels in column 0, the prediction is 0. Subtracting the prediction from the actual value
         yields a residual with lower statistical entropy in smooth image regions.
@@ -167,7 +181,7 @@
       <div class="pipeline">
         <div class="pipeline-node">Input<br><small>{{ exp.media_type|upper }} &bull; {{ fmt_bytes(exp.original_size) }}</small></div>
         <div class="pipeline-arrow">↓</div>
-        <div class="pipeline-node">Predictor<br><small>{{ 'LEFT NEIGHBOUR' if (exp.media_type=='image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png']) else 'DELTA' }}</small></div>
+        <div class="pipeline-node">Predictor<br><small>{{ 'SPATIAL + TEMPORAL' if is_vid else ('LEFT NEIGHBOUR' if is_img else 'DELTA') }}</small></div>
         <div class="pipeline-arrow">↓ residual stream</div>
         <div class="pipeline-fork">
           <div class="pipeline-node pipeline-candidate {% if exp.selected_codec == 'rle' %}pipeline-selected{% endif %}">
@@ -253,9 +267,9 @@
           <div class="verify-desc">
             {% if exp.verification %}
             The decompressed output is bit-identical to the original input.
-            Every {{ "pixel" if (exp.media_type == "image" or exp.filename.split('.')[-1].lower() in ['bmp', 'png']) else "PCM sample" }} matches exactly.
+            Every {{ "decoded video frame" if is_vid else ("pixel" if is_img else "PCM sample") }} matches exactly.
             {% else %}
-            Decompressed output differs from the original. This should not occur with correct AHMC v2 files.
+            Decompressed output differs from the original. This should not occur with correct lossless files.
             {% endif %}
           </div>
         </div>

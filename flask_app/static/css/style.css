@@ -242,6 +242,7 @@ img { max-width: 100%; }
 .icon-purple { background: rgba(99,102,241,0.15); color: var(--purple);  }
 .icon-orange { background: rgba(249,115,22,0.15); color: var(--orange);  }
 .icon-green  { background: rgba(63,185,80,0.15);  color: var(--green);   }
+.icon-red    { background: rgba(248,81,73,0.15);   color: var(--red);     }
 
 .stat-value { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.03em; }
 .stat-label { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
@@ -398,6 +399,7 @@ img { max-width: 100%; }
 }
 .badge-image { background: rgba(99,102,241,0.2); color: var(--purple); }
 .badge-audio { background: rgba(0,212,170,0.15); color: var(--accent); }
+.badge-video { background: rgba(248,81,73,0.18); color: #f87171; }
 .codec-badge {
   display: inline-block;
   padding: 2px 8px;
