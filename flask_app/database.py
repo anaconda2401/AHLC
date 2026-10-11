@@ -98,7 +98,7 @@ def get_experiment(exp_id: int) -> Optional[dict]:
 def get_all_experiments(limit: int = 200) -> list:
     with _conn() as con:
         rows = con.execute(
-            "SELECT * FROM experiments ORDER BY created_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM experiments ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -108,17 +108,25 @@ def get_dashboard_stats() -> dict:
         total = con.execute("SELECT COUNT(*) FROM experiments").fetchone()[0]
         bmps = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.bmp' OR media_type='bmp'").fetchone()[0]
         pngs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.png' OR media_type='png'").fetchone()[0]
+        wavs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.wav' OR media_type='wav'").fetchone()[0]
+        flacs = con.execute("SELECT COUNT(*) FROM experiments WHERE filename LIKE '%.flac' OR media_type='flac'").fetchone()[0]
+        images = bmps + pngs
+        audio = wavs + flacs
         avg_r = con.execute("SELECT AVG(compression_ratio) FROM experiments WHERE compression_ratio IS NOT NULL").fetchone()[0]
         saved = con.execute("SELECT SUM(original_size - compressed_size) FROM experiments WHERE original_size >= compressed_size").fetchone()[0]
         ver_ok = con.execute("SELECT COUNT(*) FROM experiments WHERE verification=1").fetchone()[0]
         ver_rt = (ver_ok / total * 100) if total > 0 else 0.0
         recent = con.execute(
-            "SELECT * FROM experiments ORDER BY created_at DESC LIMIT 5"
+            "SELECT * FROM experiments ORDER BY id DESC LIMIT 5"
         ).fetchall()
     return {
         "total": total,
         "bmps": bmps,
         "pngs": pngs,
+        "wavs": wavs,
+        "flacs": flacs,
+        "images": images,
+        "audio": audio,
         "avg_ratio": round(avg_r, 3) if avg_r else 0.0,
         "total_saved_bytes": saved or 0,
         "verification_rate": round(ver_rt, 1),

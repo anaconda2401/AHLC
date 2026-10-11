@@ -9,15 +9,22 @@
 ## Overview
 
 AHLC is a complete lossless multimedia compression research engine built in C++20,
-with a professional Flask web dashboard for demonstration and analysis.
+with a professional Flask web dashboard for demonstration, analysis, and verification.
+
+Supported media formats:
+- **Images:** BMP (`.bmp`) and PNG (`.png`)
+- **Audio:** WAV (`.wav`) and FLAC (`.flac`)
 
 The engine automatically selects the best compression codec for each input by
 analysing its statistical properties — no manual tuning required.
 
-**Adaptive Pipeline:**
+**Adaptive Multimedia Pipeline:**
 
 ```
-Input Media (BMP / WAV)
+Input Media (BMP / PNG / WAV / FLAC)
+        ↓
+  Format Abstraction / Decoding to Raw Data
+  (BMP/PNG -> Raw pixels; WAV/FLAC -> Raw PCM samples)
         ↓
   Media-specific Predictor
   (Spatial left-neighbour for image, delta for audio)
@@ -31,12 +38,11 @@ Input Media (BMP / WAV)
                     ↓
            Select smaller payload
                     ↓
-           AHMC v2 Container
-       (header + selected payload)
+           AHMC v2 Container / Optimized Format
                     ↓
-         Decompress + Inverse Predictor
+         Decompress / Reconstruct Media
                     ↓
-         Exact Lossless Verification
+    Exact Lossless Verification (Sample / Pixel identical)
 ```
 
 ---
@@ -112,19 +118,20 @@ AHLC/
 | 3B | RLE Compression | ✅ Complete |
 | 3C | Canonical Huffman Entropy Coder | ✅ Complete |
 | 4A | BMP Image Support + Spatial Predictor | ✅ Complete |
+| 4B | PNG Image Lossless Optimization | ✅ Complete |
 | 5A | WAV Audio Support + Delta Predictor | ✅ Complete |
 | 5B | Adaptive Codec Selection (RLE vs Huffman) | ✅ Complete |
-| 6 | Flask Web Dashboard | ✅ Complete |
+| 6 | FFmpeg Integration & Format Abstraction Layer | ✅ Complete |
+| 7 | WAV & FLAC Audio Compression & Flask Integration | ✅ Complete |
 
 ---
 
 ## Build (C++ Engine)
 
-**Prerequisites:** Windows 11 · Visual Studio 2022 (MSVC v143) · CMake 3.20+ · C++20  
-No external libraries — stdlib only.
+**Prerequisites:** Windows 11 · Visual Studio 2022 (MSVC v143) · CMake 3.20+ · C++20 · FFmpeg 9.0.2 (via vcpkg)
 
 ```powershell
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="E:\Programs\vcpkg-ahcl\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build build --config Release
 ```
 
@@ -153,16 +160,18 @@ Open **http://127.0.0.1:5000**
 
 | URL | Page |
 |-----|------|
-| `/` | Main dashboard — stats cards + file upload |
-| `/analyze` | Analyze a file (entropy, metadata) without compressing |
-| `/result/<id>` | Compression result with 3 Chart.js charts |
+| `/` | Main dashboard — stats cards + BMP, PNG, WAV, FLAC upload |
+| `/analyze` | Analyze media (entropy, metadata) without compressing |
+| `/result/<id>` | Compression result with metadata + Chart.js charts |
 | `/history` | Full experiment history table |
 | `/report/<id>` | 9-section research report + pipeline diagram |
-| `/download/<id>/compressed` | Download `.ahmc` file |
-| `/download/<id>/recovered` | Download losslessly recovered media |
+| `/download/<id>` | Download valid audio/image file (`.bmp`, `.png`, `.wav`, or `.flac`) |
 
-The Flask layer is **orchestration only** — all compression/decompression is
-performed by `ahmc.exe` via `subprocess`. No algorithms are re-implemented in Python.
+The Flask layer coordinates format handling and verification:
+- For WAV: passes through the C++ AHLC audio compression engine (`audio-compress` / `audio-decompress`) and reconstructs standard PCM WAV.
+- For FLAC: decodes FLAC to PCM -> processes through AHLC audio prediction & adaptive coding -> reconstructs PCM -> encodes to standard valid FLAC.
+- Decoded samples and audio metadata are verified 100% losslessly (`soundfile` + C++ `audio-verify`).
+- When input is already optimal (e.g. FLAC), honest reporting is displayed (0 B saved, 1.00x ratio, original retained).
 
 ---
 

@@ -9,7 +9,7 @@
   </div>
   <div class="header-actions">
     <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-ghost">← Back to Result</a>
-    <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">Download {{ exp.filename.split('.')[-1]|upper }} Image</a>
+    <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">Download {{ exp.filename.split('.')[-1]|upper }} File</a>
   </div>
 </div>
 
@@ -24,7 +24,7 @@
         <div class="info-row"><span>Filename</span><span class="mono">{{ exp.filename }}</span></div>
         <div class="info-row"><span>Media type</span><span>{{ exp.media_type|upper }}</span></div>
         <div class="info-row"><span>Original file size</span><span>{{ fmt_bytes(exp.original_size) }} ({{ exp.original_size }} bytes)</span></div>
-        {% if exp.media_type == 'image' %}
+        {% if exp.media_type == 'image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png'] %}
         <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} pixels</span></div>
         <div class="info-row"><span>Colour depth</span><span>{{ exp.bpp }} bits per pixel</span></div>
         {% else %}
@@ -63,12 +63,12 @@
       <h2>Prediction Stage</h2>
       <div class="info-rows">
         <div class="info-row"><span>Predictor type</span>
-          <span>{{ "Left-neighbour (per channel byte)" if exp.media_type == 'image' else "Delta (previous sample, per channel)" }}</span></div>
+          <span>{{ "Left-neighbour (per channel byte)" if (exp.media_type == 'image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png']) else "Delta (previous sample, per channel)" }}</span></div>
         <div class="info-row"><span>Predictor ID</span>
           <span class="mono">{{ (exp.predictor or '—')|upper }}</span></div>
       </div>
       <p class="report-note">
-        {% if exp.media_type == 'image' %}
+        {% if exp.media_type == 'image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png'] %}
         The spatial predictor estimates each channel byte as the same channel byte of the left pixel.
         For pixels in column 0, the prediction is 0. Subtracting the prediction from the actual value
         yields a residual with lower statistical entropy in smooth image regions.
@@ -167,7 +167,7 @@
       <div class="pipeline">
         <div class="pipeline-node">Input<br><small>{{ exp.media_type|upper }} &bull; {{ fmt_bytes(exp.original_size) }}</small></div>
         <div class="pipeline-arrow">↓</div>
-        <div class="pipeline-node">Predictor<br><small>{{ 'LEFT NEIGHBOUR' if exp.media_type=='image' else 'DELTA' }}</small></div>
+        <div class="pipeline-node">Predictor<br><small>{{ 'LEFT NEIGHBOUR' if (exp.media_type=='image' or exp.filename.split('.')[-1].lower() in ['bmp', 'png']) else 'DELTA' }}</small></div>
         <div class="pipeline-arrow">↓ residual stream</div>
         <div class="pipeline-fork">
           <div class="pipeline-node pipeline-candidate {% if exp.selected_codec == 'rle' %}pipeline-selected{% endif %}">
@@ -253,7 +253,7 @@
           <div class="verify-desc">
             {% if exp.verification %}
             The decompressed output is bit-identical to the original input.
-            Every {{ "pixel" if exp.media_type == "image" else "PCM sample" }} matches exactly.
+            Every {{ "pixel" if (exp.media_type == "image" or exp.filename.split('.')[-1].lower() in ['bmp', 'png']) else "PCM sample" }} matches exactly.
             {% else %}
             Decompressed output differs from the original. This should not occur with correct AHMC v2 files.
             {% endif %}
