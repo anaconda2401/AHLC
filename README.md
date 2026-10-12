@@ -337,10 +337,3 @@ python scratch/run_all_tests.py
    ALL TESTS PASSED! FULL SYSTEM COMPLIANT & VERIFIED.
 ======================================================================
 ```
-
----
-
-## 9. License & Academic Attribution
-
-This project was developed as an academic coursework implementation for **Advanced Data Compression Techniques**.  
-All rights reserved © 2026.
