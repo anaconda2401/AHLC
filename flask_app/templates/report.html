@@ -4,12 +4,15 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1 class="page-title">AHLC Compression Report</h1>
-    <p class="page-sub">Experiment #{{ exp.id }} · {{ exp.filename }} · {{ exp.created_at[:16] }}</p>
+    <h1 class="page-title">Compression Report</h1>
+    <p class="page-sub">Experiment #{{ exp.id }} &middot; {{ exp.filename }} &middot; {{ exp.created_at[:16] }}</p>
   </div>
   <div class="header-actions">
-    <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-ghost">← Back to Result</a>
-    <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">Download {{ exp.filename.split('.')[-1]|upper }} File</a>
+    <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-ghost">&larr; Back to Result</a>
+    <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download {{ exp.filename.split('.')[-1]|upper }} File
+    </a>
   </div>
 </div>
 

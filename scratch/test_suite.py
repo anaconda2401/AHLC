@@ -186,6 +186,16 @@ def test_suite():
     assert b"files are supported." in r_mp3.data
     print(" [PASS] Rejection of .mp3: Flash message shown")
 
+    # -------------------------------------------------------------
+    # 6. Clear History Workflow
+    # -------------------------------------------------------------
+    print("\n--- Test 6: Clear History Workflow ---")
+    r_clear = client.post("/clear_history", follow_redirects=True)
+    assert r_clear.status_code == 200
+    assert len(db.get_all_experiments()) == 0
+    assert b"No experiments yet." in r_clear.data
+    print(" [PASS] Clear History: All session records deleted, empty state displayed")
+
     print("\n" + "=" * 60)
     print("ALL TESTS PASSED SUCCESSFULLY!")
     print("=" * 60)

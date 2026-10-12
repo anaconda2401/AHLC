@@ -5,8 +5,23 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Experiment History</h1>
-    <p class="page-sub">{{ experiments|length }} total experiments</p>
+    <p class="page-sub">{{ experiments|length }} experiment{% if experiments|length != 1 %}s{% endif %} recorded</p>
   </div>
+  {% if experiments %}
+  <div class="header-actions">
+    <form action="{{ url_for('clear_history') }}" method="post" onsubmit="return confirm('Clear all experiment history and remove saved outputs? This cannot be undone.');" style="display:inline">
+      <button type="submit" class="btn btn-danger btn-sm" id="clear-history-btn" title="Clear all past experiment history">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          <line x1="10" y1="11" x2="10" y2="17"></line>
+          <line x1="14" y1="11" x2="14" y2="17"></line>
+        </svg>
+        Clear History
+      </button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 
 {% if experiments %}
@@ -19,11 +34,10 @@
         <th>File</th>
         <th>Type</th>
         <th>Original</th>
-        <th>Compressed</th>
+        <th>Output</th>
         <th>Ratio</th>
         <th>Saved</th>
-        <th>Predictor</th>
-        <th>Codec</th>
+        <th>Method</th>
         <th>Verify</th>
         <th></th>
       </tr>
@@ -34,7 +48,7 @@
       <td class="muted">{{ exp.id }}</td>
       <td class="muted mono">{{ exp.created_at[:16] }}</td>
       <td><span class="filename">{{ exp.filename }}</span></td>
-      <td><span class="type-badge">{{ exp.filename.split('.')[-1]|upper }}</span></td>
+      <td><span class="badge badge-{{ exp.media_type }}">{{ exp.filename.split('.')[-1]|upper }}</span></td>
       <td>{{ fmt_bytes(exp.original_size) }}</td>
       <td>{{ fmt_bytes(exp.compressed_size) }}</td>
       <td class="ratio-cell {% if (exp.compression_ratio or 0) >= 1 %}ratio-good{% else %}ratio-bad{% endif %}">
@@ -43,18 +57,17 @@
       <td class="{% if (exp.space_saved_percent or 0) > 0 %}text-green{% elif (exp.space_saved_percent or 0) < 0 %}text-red{% endif %}">
         {{ "%+.1f"|format(exp.space_saved_percent or 0) }}%
       </td>
-      <td class="mono">{{ (exp.predictor or '—')|upper }}</td>
       <td><span class="codec-badge {% if exp.selected_codec == 'original' %}badge-original{% endif %}">{{ 'ORIGINAL' if exp.selected_codec in ['original', 'none'] else (exp.selected_codec or '—')|upper }}</span></td>
       <td>
         {% if exp.verification %}
-        <span class="verify-pass">✓ PASS</span>
+        <span class="verify-pass">✓ Pass</span>
         {% else %}
-        <span class="verify-fail">✗ FAIL</span>
+        <span class="verify-fail">✗ Fail</span>
         {% endif %}
       </td>
       <td>
         <div class="row-actions">
-          <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-xs">Result</a>
+          <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-xs btn-ghost">Result</a>
           <a href="{{ url_for('report', exp_id=exp.id) }}" class="btn btn-xs btn-ghost">Report</a>
         </div>
       </td>
@@ -66,12 +79,12 @@
 {% else %}
 <div class="empty-state">
   <div class="empty-icon">
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
     </svg>
   </div>
   <p>No experiments yet.</p>
-  <a href="{{ url_for('dashboard') }}" class="btn btn-primary" style="margin-top:1rem">Run First Experiment</a>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary" style="margin-top:1rem">Go to Dashboard</a>
 </div>
 {% endif %}
 {% endblock %}

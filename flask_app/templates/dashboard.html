@@ -4,83 +4,59 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1 class="page-title">Research Dashboard</h1>
-    <p class="page-sub">Content-Adaptive Hybrid Lossless Compression for Multimedia Data</p>
+    <h1 class="page-title">AHLC Compression Dashboard</h1>
+    <p class="page-sub">Lossless compression and recovery for BMP, PNG, WAV, FLAC, AVI, and MP4 files.</p>
   </div>
 </div>
 
-<!-- ===== Stats Grid ===== -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-icon icon-blue">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-8 4 6"/></svg>
-    </div>
-    <div class="stat-value">{{ stats.total }}</div>
-    <div class="stat-label">Total Experiments</div>
+{% if stats.total > 0 %}
+<!-- ===== Activity Summary ===== -->
+<div class="summary-bar">
+  <div class="summary-item">
+    <div class="summary-value">{{ stats.total }}</div>
+    <div class="summary-label">Total files processed</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon icon-teal">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-    </div>
-    <div class="stat-value">{{ stats.images if stats.images is defined else (stats.bmps + stats.pngs) }}</div>
-    <div class="stat-label">Images (BMP/PNG)</div>
+  <div class="summary-item">
+    <div class="summary-value">{{ stats.images }}</div>
+    <div class="summary-label">Images (BMP / PNG)</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon icon-purple">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-    </div>
-    <div class="stat-value">{{ stats.audio if stats.audio is defined else (stats.wavs + stats.flacs) }}</div>
-    <div class="stat-label">Audio (WAV/FLAC)</div>
+  <div class="summary-item">
+    <div class="summary-value">{{ stats.audio }}</div>
+    <div class="summary-label">Audio (WAV / FLAC)</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon icon-red">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="17" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
-    </div>
-    <div class="stat-value">{{ stats.videos if stats.videos is defined else (stats.avis + stats.mp4s) }}</div>
-    <div class="stat-label">Video (AVI/MP4)</div>
+  <div class="summary-item">
+    <div class="summary-value">{{ stats.videos }}</div>
+    <div class="summary-label">Video (AVI / MP4)</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon icon-orange">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-    </div>
-    <div class="stat-value">{{ "%.2f"|format(stats.avg_ratio) }}x</div>
-    <div class="stat-label">Avg Compression Ratio</div>
+  <div class="summary-item">
+    <div class="summary-value summary-accent">{{ fmt_bytes(stats.total_saved_bytes) }}</div>
+    <div class="summary-label">Total space saved</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon icon-green">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-    </div>
-    <div class="stat-value">{{ fmt_bytes(stats.total_saved_bytes) }}</div>
-    <div class="stat-label">Total Space Saved</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon icon-teal">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    </div>
-    <div class="stat-value">{{ stats.verification_rate }}%</div>
-    <div class="stat-label">Lossless Verify Rate</div>
+  <div class="summary-item">
+    <div class="summary-value">{{ stats.verification_rate }}%</div>
+    <div class="summary-label">Lossless verify rate</div>
   </div>
 </div>
+{% endif %}
 
 <!-- ===== Upload Zone ===== -->
 <div class="section-header">
-  <h2 class="section-title">Compress Multimedia</h2>
-  <p class="section-sub">Lossless compression for BMP, PNG, WAV, FLAC, AVI, and MP4 with bit-identical / frame-identical verification</p>
+  <h2 class="section-title">Compress a File</h2>
 </div>
 
 <form id="compress-form" action="{{ url_for('do_compress') }}" method="post" enctype="multipart/form-data">
   <div class="upload-zone" id="drop-zone">
     <input type="file" id="file-input" name="file" accept=".bmp,.png,.wav,.flac,.avi,.mp4" style="display:none"/>
     <div class="upload-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <polyline points="16 16 12 12 8 16"/>
         <line x1="12" y1="12" x2="12" y2="21"/>
         <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
       </svg>
     </div>
     <div class="upload-text">
-      <p class="upload-main">Drop Image, Audio, or Video File Here</p>
-      <p class="upload-hint">or <button type="button" class="upload-browse" onclick="document.getElementById('file-input').click()">Browse Files</button></p>
+      <p class="upload-main">Drop a file here, or <button type="button" class="upload-browse" onclick="document.getElementById('file-input').click()">Choose File</button></p>
+      <p class="upload-hint">Supported formats:</p>
     </div>
     <div class="upload-types">
       <span class="type-badge">BMP</span>
@@ -90,16 +66,17 @@
       <span class="type-badge">AVI</span>
       <span class="type-badge">MP4</span>
     </div>
+    <p class="upload-limit-note">Max upload: 100 MB (video: 50 MB demo limit)</p>
     <div id="file-selected" class="file-selected" style="display:none">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
       <span id="file-name"></span>
     </div>
   </div>
 
   <div style="text-align:center;margin-top:1rem">
     <button type="submit" class="btn btn-primary btn-lg" id="compress-btn" disabled>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Analyze &amp; Compress
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Compress File
     </button>
   </div>
 
@@ -117,16 +94,17 @@
 
 <!-- ===== Recent Experiments ===== -->
 {% if stats.recent %}
-<div class="section-header" style="margin-top:2.5rem">
+<div class="section-divider"></div>
+<div class="section-header">
   <h2 class="section-title">Recent Experiments</h2>
-  <a href="{{ url_for('history') }}" class="btn btn-ghost">View All →</a>
+  <a href="{{ url_for('history') }}" class="btn btn-ghost btn-xs">View all →</a>
 </div>
 <div class="table-wrap">
   <table class="data-table">
     <thead>
       <tr>
         <th>File</th><th>Type</th><th>Original</th>
-        <th>Compressed</th><th>Ratio</th><th>Codec</th>
+        <th>Output</th><th>Ratio</th><th>Result</th>
         <th>Verify</th><th></th>
       </tr>
     </thead>
@@ -137,27 +115,30 @@
       <td><span class="badge badge-{{ exp.media_type }}">{{ exp.media_type|upper }}</span></td>
       <td>{{ fmt_bytes(exp.original_size) }}</td>
       <td>{{ fmt_bytes(exp.compressed_size) }}</td>
-      <td class="ratio-cell">{{ "%.2f"|format(exp.compression_ratio or 0) }}x</td>
+      <td class="ratio-cell {% if (exp.compression_ratio or 0) > 1 %}ratio-good{% else %}ratio-bad{% endif %}">
+        {{ "%.2f"|format(exp.compression_ratio or 0) }}x
+      </td>
       <td><span class="codec-badge {% if exp.selected_codec == 'original' %}badge-original{% endif %}">{{ 'ORIGINAL' if exp.selected_codec in ['original', 'none'] else (exp.selected_codec or '—')|upper }}</span></td>
       <td>
         {% if exp.verification %}
-        <span class="verify-pass">✓ PASS</span>
+        <span class="verify-pass">✓ Pass</span>
         {% else %}
-        <span class="verify-fail">✗ FAIL</span>
+        <span class="verify-fail">✗ Fail</span>
         {% endif %}
       </td>
-      <td><a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-xs">View</a></td>
+      <td><a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-xs btn-ghost">View →</a></td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
+<div class="section-divider"></div>
 <div class="empty-state">
   <div class="empty-icon">
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
   </div>
-  <p>No experiments yet. Upload a BMP, PNG, WAV, FLAC, AVI, or MP4 file to get started.</p>
+  <p>No experiments yet. Upload a file above to get started.</p>
 </div>
 {% endif %}
 {% endblock %}

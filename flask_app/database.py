@@ -189,3 +189,27 @@ def get_dashboard_stats() -> dict:
 def delete_experiment(exp_id: int):
     with _conn() as con:
         con.execute("DELETE FROM experiments WHERE id=?", (exp_id,))
+
+
+def clear_all_experiments(delete_files: bool = True) -> int:
+    """Delete all experiment records from the database and remove associated output/upload files."""
+    with _conn() as con:
+        if delete_files:
+            rows = con.execute("SELECT original_path, compressed_path, recovered_path FROM experiments").fetchall()
+            for r in rows:
+                for k in ["original_path", "compressed_path", "recovered_path"]:
+                    p_str = r[k]
+                    if p_str:
+                        try:
+                            p = Path(p_str).resolve()
+                            if p.exists() and p.is_file() and ("uploads" in p.parts or "outputs" in p.parts):
+                                p.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+        cur = con.execute("DELETE FROM experiments")
+        try:
+            con.execute("DELETE FROM sqlite_sequence WHERE name='experiments'")
+        except Exception:
+            pass
+        return cur.rowcount
+

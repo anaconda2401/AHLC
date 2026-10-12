@@ -1,373 +1,346 @@
-# AHLC — Content-Adaptive Hybrid Lossless Compression
+# AHLC — Adaptive Hybrid Lossless Compression
 
-> **Research Project** · Final Year · C++20 · Flask Dashboard  
-> Content-Adaptive Hybrid Lossless Compression for Multimedia Data  
-> Using Spatial, Temporal, and Entropy-Aware Coding
-
----
-
-## Overview
-
-AHLC is a complete lossless multimedia compression research engine built in C++20,
-with a professional Flask web dashboard for demonstration, analysis, and verification.
-
-Supported media formats:
-- **Images:** BMP (`.bmp`) and PNG (`.png`)
-- **Audio:** WAV (`.wav`) and FLAC (`.flac`)
-- **Video:** AVI (`.avi`) and MP4 (`.mp4`)
-
-The engine automatically selects the best compression codec for each input by
-analysing its statistical properties — no manual tuning required.
-
-**Adaptive Multimedia Pipeline:**
-
-```
-Input Media (BMP / PNG / WAV / FLAC / AVI / MP4)
-        ↓
-  Format Abstraction / Decoding to Raw Data
-  (BMP/PNG -> Raw pixels; WAV/FLAC -> Raw PCM samples; AVI/MP4 -> Raw video frames)
-        ↓
-  Media-specific Predictor
-  (Spatial left-neighbour for image, delta for audio, spatial + inter-frame delta for video)
-        ↓
-  Residual Stream
-        ↓
-  ┌─────────────┐    ┌──────────────┐
-  │  RLE Codec  │    │ Huffman Codec│
-  └──────┬──────┘    └──────┬───────┘
-         └─────── compare ──┘
-                    ↓
-           Select smaller payload
-                    ↓
-           Container / Reconstruction (FFV1 for AVI, CRF 0 for MP4)
-                    ↓
-         Decompress / Reconstruct Media
-                    ↓
-    Exact Lossless Verification (Sample / Pixel / Frame identical)
-```
+> **Academic Project** · Advanced Data Compression Techniques · C++20 · Flask Web Dashboard  
+> **Content-Adaptive Hybrid Lossless Compression for Multimedia Data (Images, Audio, Video)**  
+> Integrating Spatial, Temporal, and Entropy-Aware Coding with Bit-Exact Verification
 
 ---
 
-## Project Structure
+## 1. Overview
+
+**AHLC (Adaptive Hybrid Lossless Compression)** is an engineering and research-oriented multimedia compression system implemented in **C++20**, accompanied by an interactive **Python Flask** web dashboard.
+
+The system decouples format decoding from core entropy coding via an extensible **Format Abstraction Layer**, evaluates statistical data properties (Shannon entropy and byte frequency), applies domain-specific predictive decorrelation (spatial, delta, and inter-frame temporal differencing), and dynamically selects the best compression codec between **Packet RLE** and **Canonical Huffman Coding**.
+
+### Supported Media Formats
+
+| Media Category | Formats | Processing & Packaging Method | Lossless Verification |
+| :--- | :--- | :--- | :--- |
+| **Images** | **BMP** (`.bmp`)<br>**PNG** (`.png`) | Spatial left-neighbour prediction + Adaptive RLE/Huffman (AHMC v2); Lossless DEFLATE L9 + adaptive filtering for PNG. | **Pixel-identical** (100% RGB/RGBA match) |
+| **Audio** | **WAV** (`.wav`)<br>**FLAC** (`.flac`) | De-interleaved channel delta prediction + Adaptive RLE/Huffman; Lossless FLAC stream decoding & reconstruction. | **Sample-identical** (100% PCM sample match) |
+| **Video** | **AVI** (`.avi`)<br>**MP4** (`.mp4`) | Intra-frame spatial + inter-frame temporal residual coding; Lossless FFV1 in AVI container; Honest retention fallback for pre-compressed H.264 MP4. | **Decoded-frame identical** (100% frame hash match) |
+
+### Core Philosophy: Honest Reporting & Bit-Exact Verification
+
+1. **No Artificial Savings:** If an input file is already compressed or high-entropy (such that compression causes expansion), the system honestly reports the candidate sizes, triggers a fallback to retain the original file, and displays 0 B saved, 1.00x compression ratio, and zero negative container overhead.
+2. **Mathematical Verification:** Every compression operation is subjected to a mandatory round-trip verification pass. Recovered media is compared against original raw pixels, PCM audio samples, or decoded video frames.
+3. **Audio Preservation:** Video files containing audio tracks automatically preserve audio streams losslessly via streamcopy (`-c:a copy`).
+
+---
+
+## 2. Architecture & Pipeline
+
+```
+                                  Input Media File
+                        (BMP, PNG, WAV, FLAC, AVI, MP4)
+                                         ↓
+                     ┌───────────────────────────────────────┐
+                     │   Format Abstraction Layer (C++)      │
+                     │         Format Detection              │
+                     └──────────────────┬────────────────────┘
+                                        ↓
+                       Common Raw Media Representations
+                     ┌──────────────────┼────────────────────┐
+                     ↓                  ↓                    ↓
+                ImageFrame         AudioBuffer           VideoFrame
+              (W × H, BPP,        (Channels, SR,       (W × H, FPS,
+              pixel buffer)        sample buffer)      frame buffers)
+                     ↓                  ↓                    ↓
+                     └──────────────────┼────────────────────┘
+                                        ↓
+                     ┌───────────────────────────────────────┐
+                     │       Domain-Specific Predictor       │
+                     │  • Image: Left-neighbour spatial      │
+                     │  • Audio: Previous-sample delta       │
+                     │  • Video: Spatial + Inter-frame delta │
+                     └──────────────────┬────────────────────┘
+                                        ↓
+                                 Residual Stream
+                                        ↓
+                     ┌──────────────────┴────────────────────┐
+                     ↓                                       ↓
+           Packet RLE Compressor                  Canonical Huffman Coder
+           (Byte-run PackBits)                    (256-symbol prefix tree)
+                     ↓                                       ↓
+                     └──────────────────┬────────────────────┘
+                                        ↓
+                     ┌───────────────────────────────────────┐
+                     │     Adaptive Decision & Fallback      │
+                     │      min(RLE, Huffman, Original)      │
+                     └──────────────────┬────────────────────┘
+                                        ↓
+                     ┌───────────────────────────────────────┐
+                     │     Container Packaging & Storage     │
+                     │  • AHMC v2 container (Images / Audio) │
+                     │  • FFV1 Lossless AVI / MP4 Retention  │
+                     └──────────────────┬────────────────────┘
+                                        ↓
+                     ┌───────────────────────────────────────┐
+                     │      Lossless Verification Layer      │
+                     │   Sample / Pixel / Frame Equality     │
+                     └──────────────────┬────────────────────┘
+                                        ↓
+                         Flask Dashboard & Report Engine
+                       (Download, Charts, Technical Audit)
+```
+
+---
+
+## 3. Repository Structure
 
 ```
 AHLC/
+├── CMakeLists.txt                 # C++20 CMake build configuration & FFmpeg linkage
+├── vcpkg.json                     # vcpkg manifest declaring FFmpeg dependency
+├── requirements.txt               # Python backend dependencies (Flask, Pillow, soundfile, numpy)
+├── README.md                      # Complete system documentation
+├── .gitignore                     # Repository ignore patterns for build & media artifacts
 │
-├── CMakeLists.txt
-├── README.md
-├── requirements.txt               ← Python deps (Flask only)
+├── src/                           # C++ Compression Engine (ahmc)
+│   ├── main.cpp                   # CLI dispatcher & command router
+│   ├── analyzer/                  # Shannon entropy, byte frequency analysis
+│   │   ├── analyzer.hpp
+│   │   └── analyzer.cpp
+│   ├── bitio/                     # MSB-first bit-level stream I/O
+│   │   ├── bit_writer.hpp / .cpp
+│   │   └── bit_reader.hpp / .cpp
+│   ├── rle/                       # Byte-level PackBits Run-Length Encoding
+│   │   ├── rle_encoder.hpp / .cpp
+│   │   └── rle_decoder.hpp / .cpp
+│   ├── entropy/                   # Canonical Huffman prefix coding
+│   │   ├── huffman.hpp
+│   │   └── huffman.cpp
+│   ├── image/                     # BMP read/write, spatial left predictor, AHMC packaging
+│   │   ├── image.hpp / .cpp
+│   │   ├── image_predictor.hpp
+│   │   └── image_predictor.cpp
+│   ├── audio/                     # WAV PCM read/write, delta predictor, AHMC packaging
+│   │   ├── audio.hpp / .cpp
+│   │   ├── audio_predictor.hpp
+│   │   └── audio_predictor.cpp
+│   └── media/                     # Unified Format Abstraction Layer
+│       ├── media_defs.hpp         # Media types, formats, channel layouts
+│       ├── decoder_interface.hpp  # Abstract decoder base class
+│       ├── image_frame.hpp        # Uncompressed image pixel representation
+│       ├── audio_buffer.hpp       # Uncompressed PCM audio representation
+│       ├── video_frame.hpp        # Raw video frame sequence representation
+│       ├── format_detector.hpp    # Format signature detection & probing
+│       └── format_detector.cpp
 │
-├── src/
-│   ├── main.cpp                   ← CLI dispatcher, --json mode for Flask
-│   │
-│   ├── analyzer/
-│   │   ├── analyzer.hpp / .cpp    ← byte freq, Shannon entropy, file stats
-│   │
-│   ├── bitio/
-│   │   ├── bit_writer.hpp / .cpp  ← MSB-first bit-stream writer
-│   │   └── bit_reader.hpp / .cpp  ← MSB-first bit-stream reader
-│   │
-│   ├── rle/
-│   │   ├── rle_encoder.hpp / .cpp ← packet RLE compressor (file + in-memory)
-│   │   └── rle_decoder.hpp / .cpp ← packet RLE decompressor + file compare
-│   │
-│   ├── entropy/
-│   │   └── huffman.hpp / .cpp     ← canonical Huffman encoder/decoder
-│   │
-│   ├── image/
-│   │   ├── image.hpp / .cpp       ← BMPImage struct, BMP read/write, entropy
-│   │   ├── image_predictor.hpp    ← spatial predictor + compress API
-│   │   └── image_predictor.cpp    ← AHMC v2 compress/decompress + stats
-│   │
-│   └── audio/
-│       ├── audio.hpp / .cpp       ← AudioBuffer, WAV read/write, entropy
-│       ├── audio_predictor.hpp    ← delta predictor + compress API
-│       └── audio_predictor.cpp    ← AHMC v2 compress/decompress + stats
+├── flask_app/                     # Web Application Backend & Frontend
+│   ├── app.py                     # Flask routes, error handlers, upload security
+│   ├── ahmc_runner.py             # Subprocess wrapper, media conversion, timing
+│   ├── database.py                # SQLite persistence (experiments table & history)
+│   ├── static/
+│   │   ├── css/style.css          # Clean technical UI design with Light/Dark mode
+│   │   └── js/dashboard.js        # Drag-and-drop, progress animation, theme switcher
+│   └── templates/
+│       ├── base.html              # Base layout with sidebar and theme state
+│       ├── dashboard.html         # Upload zone, progress steps, summary metrics
+│       ├── analyze.html           # Entropy inspection & metadata analysis
+│       ├── result.html            # Metrics, verification badge, Chart.js graphs
+│       ├── history.html           # Session table with Clear History functionality
+│       └── report.html            # 9-section structured technical report
 │
-├── flask_app/
-│   ├── app.py                     ← Flask routes + security
-│   ├── ahmc_runner.py             ← subprocess wrapper, JSON parser, timing
-│   ├── database.py                ← SQLite persistence (stdlib)
-│   ├── templates/
-│   │   ├── base.html              ← sidebar layout, flash messages
-│   │   ├── dashboard.html         ← stats cards + drag-drop upload
-│   │   ├── analyze.html           ← entropy analysis page
-│   │   ├── result.html            ← compression result + Chart.js charts
-│   │   ├── history.html           ← experiment history table
-│   │   └── report.html            ← 9-section research report
-│   └── static/
-│       ├── css/style.css          ← dark-mode dashboard theme
-│       └── js/dashboard.js        ← drag-drop, progress animation
+├── scratch/                       # Test Suites & Verification Runners
+│   ├── run_all_tests.py           # Master test runner (Phases 1–4)
+│   ├── test_suite.py              # Python Image Suite (BMP & PNG)
+│   ├── test_audio_suite.py        # Python Audio Suite (WAV & FLAC — 10 tests)
+│   └── test_video_suite.py        # Python Video Suite (AVI & MP4 — 12 tests)
 │
-├── uploads/                       ← uploaded media (auto-created)
-├── outputs/                       ← compressed + recovered files (auto-created)
-│
-└── build/
-    └── Release/
-        └── ahmc.exe               ← compiled C++ engine
+├── uploads/                       # Runtime uploaded files (git-ignored, kept via .gitkeep)
+└── outputs/                       # Runtime compressed & recovered files (git-ignored)
 ```
 
 ---
 
-## Completed Phases
+## 4. Build & Setup Guide
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 1 | Project Foundation (CMake, MSVC, C++20) | ✅ Complete |
-| 2 | Core Binary Analyzer (entropy, byte freq) | ✅ Complete |
-| 3A | Bit-Level I/O (BitWriter / BitReader) | ✅ Complete |
-| 3B | RLE Compression | ✅ Complete |
-| 3C | Canonical Huffman Entropy Coder | ✅ Complete |
-| 4A | BMP Image Support + Spatial Predictor | ✅ Complete |
-| 4B | PNG Image Lossless Optimization | ✅ Complete |
-| 5A | WAV Audio Support + Delta Predictor | ✅ Complete |
-| 5B | Adaptive Codec Selection (RLE vs Huffman) | ✅ Complete |
-| 6 | FFmpeg Integration & Format Abstraction Layer | ✅ Complete |
-| 7 | WAV & FLAC Audio Compression & Flask Integration | ✅ Complete |
-| 8 | AVI & MP4 Video Support & Lossless Frame Verification | ✅ Complete |
+### 4.1 Prerequisites
+
+- **Operating System:** Windows 10 / 11 (64-bit)
+- **C++ Compiler:** Microsoft Visual Studio 2022 (MSVC v143, C++20 support)
+- **CMake:** Version 3.20 or newer
+- **Package Manager:** [vcpkg](https://github.com/microsoft/vcpkg) with `ffmpeg` installed
+- **Python:** Python 3.10+ (with virtual environment support)
 
 ---
 
-## Build (C++ Engine)
+### 4.2 Building the C++ Engine (`ahmc.exe`)
 
-**Prerequisites:** Windows 11 · Visual Studio 2022 (MSVC v143) · CMake 3.20+ · C++20 · FFmpeg 9.0.2 (via vcpkg)
+1. **Install FFmpeg via vcpkg** (if not already installed):
+   ```powershell
+   vcpkg install ffmpeg:x64-windows
+   ```
 
-```powershell
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="E:\Programs\vcpkg-ahcl\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
-cmake --build build --config Release
-```
+2. **Configure CMake with the vcpkg toolchain**:
+   ```powershell
+   cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="<path-to-vcpkg>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+   ```
 
-Output: `build\Release\ahmc.exe`
+3. **Compile the Release executable**:
+   ```powershell
+   cmake --build build --config Release
+   ```
 
----
-
-## Flask Dashboard
-
-**Prerequisites:** Python 3.10+ · `.venv` virtual environment
-
-### Install dependencies
-```powershell
-python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-```
-
-### Start the dashboard
-```powershell
-.\.venv\Scripts\python.exe flask_app/app.py
-```
-
-Open **http://127.0.0.1:5000**
-
-### Dashboard pages
-
-| URL | Page |
-|-----|------|
-| `/` | Main dashboard — stats cards + BMP, PNG, WAV, FLAC, AVI, MP4 upload |
-| `/analyze` | Analyze media (entropy, metadata) without compressing |
-| `/result/<id>` | Compression result with metadata + Chart.js charts |
-| `/history` | Full experiment history table |
-| `/report/<id>` | 9-section research report + pipeline diagram |
-| `/download/<id>` | Download valid video/audio/image file (`.bmp`, `.png`, `.wav`, `.flac`, `.avi`, or `.mp4`) |
-
-The Flask layer coordinates format handling and verification:
-- **For WAV:** passes through the C++ AHLC audio compression engine (`audio-compress` / `audio-decompress`) and reconstructs standard PCM WAV.
-- **For FLAC:** decodes FLAC to PCM -> processes through AHLC audio prediction & adaptive coding -> reconstructs PCM -> encodes to standard valid FLAC.
-- **For AVI:** prioritizes uncompressed/rawvideo streams, runs spatial and temporal prediction + RLE/Huffman simulation, reconstructs mathematically lossless intra/inter video via FFV1 in AVI container (or retains original if minimal), and verifies bit-identical decoded raw frames across all frames.
-- **For MP4:** targets H.264 video streams, decodes raw pixel frames, computes spatial/temporal residual entropy, generates candidate lossless H.264 (CRF 0), compares sizes honestly against input, retains original MP4 if CRF 0 is larger (0 B saved, 1.00x ratio), and verifies 100% pixel-identical decoded frame equality.
-- **Audio stream preservation:** detects audio track presence and preserves audio streams via streamcopy (`-c:a copy`), verifying audio equality.
-- Decoded samples, pixels, and video frames are verified 100% losslessly.
+   The build produces `build\Release\ahmc.exe`.  
+   *Note: CMake automatically copies the required FFmpeg runtime DLLs (`avutil`, `avcodec`, `avformat`, `swscale`, `swresample`) into `build\Release\` upon completion.*
 
 ---
 
-## C++ CLI Reference
+### 4.3 Setting Up the Flask Dashboard
+
+1. **Create and activate a Python virtual environment**:
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+2. **Install Python dependencies**:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+
+3. **Start the Flask development server**:
+   ```powershell
+   python flask_app/app.py
+   ```
+
+4. **Access the application**:
+   Open **`http://127.0.0.1:5000`** in any web browser.
+
+---
+
+## 5. Web Dashboard Features
+
+| Route | Feature Description |
+| :--- | :--- |
+| **`/` (Dashboard)** | Drag-and-drop file upload with animated stage indicator (`Uploading` → `Analyzing` → `Processing` → `Verifying` → `Complete`). Displays aggregate system statistics and recent experiments. |
+| **`/analyze`** | Statistical analysis page. Calculates Shannon entropy, byte frequency distribution, and format metadata without executing compression. |
+| **`/result/<id>`** | Compression outcome page. Displays original vs. compressed size, bytes saved, compression ratio, processing time, Chart.js visual comparisons, and direct download (`Download <Format> File`). |
+| **`/history`** | Comprehensive experiment history table with sorting. Includes a **Clear History** button with confirmation prompt to safely wipe past sessions and output files. |
+| **`/report/<id>`** | 9-section formal technical compression report detailing theoretical entropy limits, residual decorrelation, container overhead layouts, and verification proofs. |
+| **`/download/<id>`** | Secure download endpoint serving the recovered, bit-verified media file. |
+
+### UI Design & Theme System
+- **Theme Toggle:** Switch between a sleek, high-contrast dark theme and a clean, legible light theme. State is saved in `localStorage`.
+- **Demo Guard:** Video uploads are restricted to a configurable 50 MB limit (`AHLC_MAX_VIDEO_MB=50`) to ensure fast, responsive demonstrations.
+
+---
+
+## 6. C++ Command-Line Interface (CLI)
+
+The `ahmc.exe` binary can be executed directly for headless processing and integration testing:
 
 ```powershell
-# ── Generic Analysis ──────────────────────────────────────────────
+# ── Statistical Analysis ───────────────────────────────────────────
 .\build\Release\ahmc.exe analyze <file>
+.\build\Release\ahmc.exe entropy-compare <file>
 
-# ── Bit I/O ───────────────────────────────────────────────────────
+# ── Low-Level Codec Testing ────────────────────────────────────────
 .\build\Release\ahmc.exe bitio-test
-
-# ── RLE ───────────────────────────────────────────────────────────
-.\build\Release\ahmc.exe rle-compress   <in> <out>
-.\build\Release\ahmc.exe rle-decompress <in> <out>
-.\build\Release\ahmc.exe rle-verify     <original> <recovered>
 .\build\Release\ahmc.exe rle-test
-
-# ── Huffman ───────────────────────────────────────────────────────
-.\build\Release\ahmc.exe huffman-compress   <in> <out>
-.\build\Release\ahmc.exe huffman-decompress <in> <out>
-.\build\Release\ahmc.exe huffman-verify     <original> <recovered>
 .\build\Release\ahmc.exe huffman-test
 
-# ── Image (BMP) ───────────────────────────────────────────────────
+# ── Packet RLE Operations ──────────────────────────────────────────
+.\build\Release\ahmc.exe rle-compress   <input> <output.rle>
+.\build\Release\ahmc.exe rle-decompress <input.rle> <output>
+.\build\Release\ahmc.exe rle-verify     <original> <recovered>
+
+# ── Canonical Huffman Operations ───────────────────────────────────
+.\build\Release\ahmc.exe huffman-compress   <input> <output.huff>
+.\build\Release\ahmc.exe huffman-decompress <input.huff> <output>
+.\build\Release\ahmc.exe huffman-verify     <original> <recovered>
+
+# ── Image Operations (BMP) ─────────────────────────────────────────
 .\build\Release\ahmc.exe image-analyze      <input.bmp> [--json]
 .\build\Release\ahmc.exe image-predict      <input.bmp>
-.\build\Release\ahmc.exe image-compress     <input.bmp>  <output.ahmc> [--json]
+.\build\Release\ahmc.exe image-compress     <input.bmp> <output.ahmc> [--json]
 .\build\Release\ahmc.exe image-decompress   <input.ahmc> <output.bmp>
 .\build\Release\ahmc.exe image-verify       <original.bmp> <recovered.bmp>
 .\build\Release\ahmc.exe image-test
 .\build\Release\ahmc.exe image-adaptive-test
 
-# ── Audio (WAV PCM) ───────────────────────────────────────────────
+# ── Audio Operations (WAV PCM) ─────────────────────────────────────
 .\build\Release\ahmc.exe audio-analyze      <input.wav> [--json]
 .\build\Release\ahmc.exe audio-predict      <input.wav>
-.\build\Release\ahmc.exe audio-compress     <input.wav>  <output.ahmc> [--json]
+.\build\Release\ahmc.exe audio-compress     <input.wav> <output.ahmc> [--json]
 .\build\Release\ahmc.exe audio-decompress   <input.ahmc> <output.wav>
 .\build\Release\ahmc.exe audio-verify       <original.wav> <recovered.wav>
 .\build\Release\ahmc.exe audio-test
 .\build\Release\ahmc.exe audio-adaptive-test
 
-# ── Codec Comparison ──────────────────────────────────────────────
-.\build\Release\ahmc.exe entropy-compare <file>
+# ── FFmpeg & Format Abstraction Diagnostics ────────────────────────
+.\build\Release\ahmc.exe ffmpeg-test
+.\build\Release\ahmc.exe format-test
+.\build\Release\ahmc.exe format-analyze <media-file>
 ```
 
-The `--json` flag suppresses human-readable output and emits a single JSON object
-to stdout — used internally by the Flask dashboard.
+*Note: The `--json` flag suppresses console text and outputs a machine-readable JSON string used by the Flask backend.*
 
 ---
 
-## AHMC v2 File Format
+## 7. AHMC v2 Container Specification
 
-All compressed files use the AHMC v2 container:
+Custom compressed media artifacts utilize the **AHMC v2** binary container format:
 
-| Offset | Size | Field |
-|--------|------|-------|
-| 0–3 | 4 B | Magic: `AHLC` |
-| 4 | 1 B | Version: `2` |
-| 5 | 1 B | Predictor type (1 = LEFT, 2 = DELTA) |
-| 6 | 1 B | Codec ID (0 = RLE, 1 = Huffman) |
-| 7–14 | 8 B | Original data byte count (uint64 LE) |
-| 15–22 | 8 B | Compressed payload byte count (uint64 LE) |
-| 23–30 | 8 B | Media-specific metadata (width/height or channels/rate) |
-| 31–38 | 8 B | Additional metadata |
-| 39+ | N B | Compressed payload |
-
-**Compression ratio** is always calculated as:  
-`original_input_file_size / actual_ahmc_file_size`  
-(includes full container overhead — no inflation hiding)
+| Offset (Bytes) | Field Name | Type | Description |
+| :---: | :---: | :---: | :--- |
+| `0x00 – 0x03` | Magic | `char[4]` | Container identifier (`"AHLC"`) |
+| `0x04` | Version | `uint8_t` | Container version (`2`) |
+| `0x05` | Predictor | `uint8_t` | Predictor applied (`1` = Left Spatial, `2` = Delta) |
+| `0x06` | Codec ID | `uint8_t` | Selected codec (`0` = Packet RLE, `1` = Canonical Huffman) |
+| `0x07 – 0x0E` | Original Size | `uint64_t` | Uncompressed payload size in bytes (Little Endian) |
+| `0x0F – 0x16` | Payload Size | `uint64_t` | Compressed payload byte count (Little Endian) |
+| `0x17 – 0x1E` | Metadata 1 | `uint64_t` | Width & Height (Image) or Channels & Sample Rate (Audio) |
+| `0x1F – 0x26` | Metadata 2 | `uint64_t` | Bits per sample / Color depth |
+| `0x27+` | Payload | `uint8_t[]` | Encoded residual stream bitstream |
 
 ---
 
-## Algorithms Implemented
+## 8. Automated Test Suite
 
-### Predictors
-| Media | Predictor | Formula |
-|-------|-----------|---------|
-| Image | Left neighbour (per channel byte) | `residual = (current − left + 256) % 256` |
-| Audio | Delta (previous sample, per channel) | `residual = (current − prev + 65536) % 65536` (16-bit) |
-
-### Entropy Coders
-| Codec | Type | Best for |
-|-------|------|----------|
-| RLE | PackBits-style (control byte + payload) | Repetitive / sparse residuals |
-| Huffman | Canonical prefix coding, 256-symbol alphabet | Skewed byte distributions |
-
-The engine runs **both** codecs on every residual stream and selects the smaller output.
-
----
-
-## Test Suites
-
-All test suites run self-contained without external test files:
+A comprehensive master regression test runner is provided to verify the complete system across all media types:
 
 ```powershell
-.\build\Release\ahmc.exe bitio-test          # Bit I/O round-trip
-.\build\Release\ahmc.exe rle-test            # 7 RLE cases
-.\build\Release\ahmc.exe huffman-test        # 10 Huffman cases (incl. binary file)
-.\build\Release\ahmc.exe image-test          # 7 BMP round-trip cases
-.\build\Release\ahmc.exe image-adaptive-test # Adaptive codec selection + verify
-.\build\Release\ahmc.exe audio-test          # 7 WAV round-trip cases
-.\build\Release\ahmc.exe audio-adaptive-test # Adaptive codec selection + verify
-.\build\Release\ahmc.exe ffmpeg-test         # FFmpeg library linkage & version
-.\build\Release\ahmc.exe format-test         # C++ Format abstraction layer
-
-# Master test runner (C++, Image, Audio, Video):
-.\.venv\Scripts\python.exe scratch\run_all_tests.py
+python scratch/run_all_tests.py
 ```
 
-Expected: **ALL PASS** on all suites.
+### Verification Phases
 
----
-
-## Quick Example — Image
-
-```powershell
-# Compress a BMP losslessly
-.\build\Release\ahmc.exe image-compress photo.bmp photo.ahmc
-
-# Decompress
-.\build\Release\ahmc.exe image-decompress photo.ahmc photo_restored.bmp
-
-# Verify pixel-exact reconstruction
-.\build\Release\ahmc.exe image-verify photo.bmp photo_restored.bmp
-# → Lossless verification: PASS
-
-# JSON output (used by Flask)
-.\build\Release\ahmc.exe image-compress photo.bmp photo.ahmc --json
 ```
+======================================================================
+   AHLC MASTER TEST RUNNER — COMPLETE SYSTEM VERIFICATION
+======================================================================
 
-## Quick Example — Audio
+--- Phase 1: C++ Engine Regression Tests ---
+>> Running: C++ Bit I/O Test                 [PASSED]
+>> Running: C++ RLE Compression Test         [PASSED]
+>> Running: C++ Huffman Coding Test          [PASSED]
+>> Running: C++ Image Round-Trip Test        [PASSED]
+>> Running: C++ Adaptive Image Test          [PASSED]
+>> Running: C++ Audio Round-Trip Test        [PASSED]
+>> Running: C++ Adaptive Audio Test          [PASSED]
+>> Running: C++ FFmpeg Integration Test      [PASSED]
+>> Running: C++ Format Abstraction Test      [PASSED]
 
-```powershell
-.\build\Release\ahmc.exe audio-compress   recording.wav recording.ahmc
-.\build\Release\ahmc.exe audio-decompress recording.ahmc recording_restored.wav
-.\build\Release\ahmc.exe audio-verify     recording.wav recording_restored.wav
-# → Lossless verification: PASS
+--- Phase 2: Python Image Tests (BMP & PNG) ---
+>> Running: Image Test Suite (BMP & PNG)     [PASSED]
+
+--- Phase 3: Python Audio Tests (WAV & FLAC - 10 Requirements) ---
+>> Running: Audio Test Suite (WAV & FLAC)    [PASSED]
+
+--- Phase 4: Python Video Tests (AVI & MP4 - 12 Requirements) ---
+>> Running: Video Test Suite (AVI & MP4)     [PASSED]
+
+======================================================================
+   ALL TESTS PASSED! FULL SYSTEM COMPLIANT & VERIFIED.
+======================================================================
 ```
 
 ---
 
-## Supported Formats
+## 9. License & Academic Attribution
 
-| Format | Read | Write | Notes |
-|--------|------|-------|-------|
-| BMP 24-bit / 32-bit | ✅ | ✅ | Pixel-identical verification |
-| PNG | ✅ | ✅ | Lossless DEFLATE L9 + adaptive filtering |
-| WAV PCM 16/24/32-bit | ✅ | ✅ | Sample-identical verification |
-| FLAC | ✅ | ✅ | Sample-identical verification |
-| AVI | ✅ | ✅ | Decoded-frame identical verification (FFV1 multithreaded / zero-disk framemd5) |
-| MP4 | ✅ | ✅ | Decoded-frame identical verification (honest retention for compressed input, zero-disk verify) |
-
----
-
-## Compression Characteristics
-
-| Input type | Typical ratio | Best codec |
-|------------|---------------|------------|
-| Uniform / solid-colour BMP | 10–100x | RLE |
-| Smooth gradient BMP | 5–30x | RLE or Huffman |
-| Natural photo BMP | 1.1–2.5x | Huffman |
-| Silence / constant audio | 20–50x | RLE |
-| Sine wave audio | 1.1–2.0x | Huffman |
-| High-entropy (random) | < 1.0x | expansion noted |
-
-Expansion is **never hidden** — a ratio < 1.0 and negative space-saved % are
-reported correctly when the AHMC file is larger than the original.
-
----
-
-## Security (Flask Dashboard)
-
-- `werkzeug.utils.secure_filename()` on all uploads
-- Extension allow-list: `.bmp`, `.png`, `.wav`, `.flac`, `.avi`, `.mp4` only
-- `MAX_CONTENT_LENGTH = 100 MB` (Configurable 50 MB demo limit for video uploads via `AHLC_MAX_VIDEO_MB`)
-- UUID-prefixed filenames (no path traversal)
-- `subprocess` always uses argument lists — `shell=False`
-- Uploads stored outside `templates/` and `static/`
-- `ahmc.exe` is never passed user input through the shell
-
----
-
-## Requirements
-
-### C++ Engine
-- Windows 11
-- Visual Studio 2022 (MSVC v143, C++20)
-- CMake 3.20+
-- No external libraries
-
-### Flask Dashboard
-- Python 3.10+
-- Flask 3.x (see `requirements.txt`)
-- No other runtime dependencies — SQLite is Python stdlib
+This project was developed as an academic coursework implementation for **Advanced Data Compression Techniques**.  
+All rights reserved © 2026.

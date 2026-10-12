@@ -219,9 +219,9 @@ def run_audio_tests():
     with open(wav_normal, "rb") as f:
         r = client.post("/compress", data={"file": (f, "test_audio.wav")}, follow_redirects=True)
     assert r.status_code == 200, f"Flask WAV upload returned {r.status_code}"
-    assert b"Audio Compression Result" in r.data
+    assert b"Compression Result" in r.data
     assert b"Download WAV File" in r.data
-    assert b"Sample-identical verification: PASS" in r.data
+    assert (b"sample-level lossless" in r.data or b"Sample-identical verification: PASS" in r.data)
 
     # Download WAV
     exps = db.get_all_experiments(limit=1)
@@ -241,9 +241,9 @@ def run_audio_tests():
     with open(flac_valid, "rb") as f:
         r = client.post("/compress", data={"file": (f, "test_music.flac")}, follow_redirects=True)
     assert r.status_code == 200, f"Flask FLAC upload returned {r.status_code}"
-    assert b"Audio Compression Result" in r.data
+    assert b"Compression Result" in r.data
     assert b"Download FLAC File" in r.data
-    assert b"Sample-identical verification: PASS" in r.data
+    assert (b"sample-level lossless" in r.data or b"Sample-identical verification: PASS" in r.data)
 
     # Download FLAC
     exps = db.get_all_experiments(limit=1)

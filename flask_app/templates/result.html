@@ -1,170 +1,186 @@
 {% extends "base.html" %}
-{% block title %}Result #{{ exp.id }} — AHLC Compression{% endblock %}
+{% block title %}Result #{{ exp.id }} — AHLC{% endblock %}
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
-{% set orig_sz = exp.original_size or 0 %}
-{% set comp_sz = exp.compressed_size or orig_sz %}
+{% set orig_sz   = exp.original_size or 0 %}
+{% set comp_sz   = exp.compressed_size or orig_sz %}
 {% set bytes_saved = (orig_sz - comp_sz) if orig_sz >= comp_sz else 0 %}
-{% set ratio = exp.compression_ratio or 1.0 %}
-{% set saved = exp.space_saved_percent or 0.0 %}
-{% set verified = exp.verification %}
-{% set ext = exp.filename.split('.')[-1]|upper %}
-{% set is_video = (exp.media_type == 'video') or (ext in ['AVI', 'MP4']) %}
-{% set is_audio = (exp.media_type == 'audio') or (ext in ['WAV', 'FLAC']) %}
+{% set ratio     = exp.compression_ratio or 1.0 %}
+{% set saved     = exp.space_saved_percent or 0.0 %}
+{% set verified  = exp.verification %}
+{% set ext       = exp.filename.split('.')[-1]|upper %}
+{% set is_video  = (exp.media_type == 'video') or (ext in ['AVI', 'MP4']) %}
+{% set is_audio  = (exp.media_type == 'audio') or (ext in ['WAV', 'FLAC']) %}
+{% set is_retained = (exp.is_fallback or exp.selected_codec in ['original', 'none'] or (comp_sz == orig_sz and saved == 0)) %}
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">{{ 'Video' if is_video else ('Audio' if is_audio else 'Image') }} Compression Result</h1>
+    <h1 class="page-title">Compression Result</h1>
     <p class="page-sub">{{ exp.filename }} · {{ ext }} · Experiment #{{ exp.id }}</p>
   </div>
   <div class="header-actions">
     <a href="{{ url_for('report', exp_id=exp.id) }}" class="btn btn-ghost">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Full Report
     </a>
     <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download {{ ext }} File
     </a>
   </div>
 </div>
 
-<!-- ===== Hero stats ===== -->
-<div class="hero-stats">
-  <div class="hero-stat">
-    <div class="hero-label">Original File Size</div>
-    <div class="hero-value">{{ fmt_bytes(orig_sz) }}</div>
+<!-- ===== Result Summary ===== -->
+<div class="result-summary">
+  <div class="result-summary-header">
+    {% if is_retained %}
+    <span class="result-status status-warn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Original retained — no size reduction achieved
+    </span>
+    {% elif bytes_saved > 0 %}
+    <span class="result-status status-ok">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Compressed successfully
+    </span>
+    {% else %}
+    <span class="result-status status-warn">Processed</span>
+    {% endif %}
+
+    <span class="result-status {% if verified %}status-ok{% else %}status-fail{% endif %}">
+      {% if verified %}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Verification passed — {{ 'decoded-frame' if is_video else ('sample-level' if is_audio else 'pixel-level') }} lossless
+      {% else %}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      Verification failed
+      {% endif %}
+    </span>
   </div>
-  <div class="hero-arrow">→</div>
-  <div class="hero-stat">
-    <div class="hero-label">Output File Size</div>
-    <div class="hero-value accent">{{ fmt_bytes(comp_sz) }}</div>
-  </div>
-  <div class="hero-divider"></div>
-  <div class="hero-stat">
-    <div class="hero-label">Bytes Saved</div>
-    <div class="hero-value {% if bytes_saved > 0 %}accent{% else %}muted{% endif %}">
-      {{ fmt_bytes(bytes_saved) }}
+
+  <div class="result-summary-grid">
+    <div class="result-metric">
+      <div class="metric-label">Original size</div>
+      <div class="metric-value">{{ fmt_bytes(orig_sz) }}</div>
     </div>
-  </div>
-  <div class="hero-stat">
-    <div class="hero-label">Space Saved</div>
-    <div class="hero-value {% if saved > 0 %}accent{% elif saved < 0 %}text-red{% else %}muted{% endif %}">
-      {{ "%+.2f"|format(saved) }}%
+    <div class="result-metric">
+      <div class="metric-label">Output size</div>
+      <div class="metric-value {% if bytes_saved > 0 %}accent{% endif %}">{{ fmt_bytes(comp_sz) }}</div>
     </div>
-  </div>
-  <div class="hero-stat">
-    <div class="hero-label">Compression Ratio</div>
-    <div class="hero-value {% if ratio > 1 %}accent{% else %}muted{% endif %}">{{ "%.3f"|format(ratio) }}x</div>
-  </div>
-  <div class="hero-stat verify-hero">
-    <div class="hero-label">{{ 'Frame' if is_video else ('Sample' if is_audio else 'Pixel') }} Lossless Verify</div>
-    <div class="hero-value {% if verified %}verify-pass{% else %}verify-fail{% endif %}">
-      {% if verified %}✓ PASS{% else %}✗ FAIL{% endif %}
+    <div class="result-metric">
+      <div class="metric-label">Bytes saved</div>
+      <div class="metric-value {% if bytes_saved > 0 %}accent{% else %}muted{% endif %}">{{ fmt_bytes(bytes_saved) }}</div>
+    </div>
+    <div class="result-metric">
+      <div class="metric-label">Space saved</div>
+      <div class="metric-value {% if saved > 0 %}accent{% else %}muted{% endif %}">
+        {{ "%+.2f"|format(saved) }}%
+      </div>
+    </div>
+    <div class="result-metric">
+      <div class="metric-label">Compression ratio</div>
+      <div class="metric-value {% if ratio > 1 %}accent{% else %}muted{% endif %}">{{ "%.3f"|format(ratio) }}x</div>
+    </div>
+    <div class="result-metric">
+      <div class="metric-label">Processing time</div>
+      <div class="metric-value">{{ "%.0f"|format(exp.compression_time_ms or 0) }} ms</div>
     </div>
   </div>
 </div>
 
-{% if saved <= 0 %}
-<div class="alert-info" style="margin-bottom:1.5rem;padding:0.85rem 1.25rem;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#8b949e">
-  ℹ️ <strong>Honest Reporting:</strong> The original file is already at minimal uncompressed or optimal compression representation. The output file retains 100% exact {{ 'decoded video frames' if is_video else ('audio samples' if is_audio else 'pixels') }} with 0 bytes overhead.
-</div>
-{% endif %}
-
-<!-- ===== Details + Charts ===== -->
+<!-- ===== Details + Chart ===== -->
 <div class="result-layout">
-  <!-- Left: info cards -->
+  <!-- Left: info -->
   <div class="result-left">
-    {% set is_retained = (exp.is_fallback or exp.selected_codec in ['original', 'none'] or (exp.compressed_size == exp.original_size and (exp.space_saved_percent or 0) == 0)) %}
+
     <div class="info-card">
-      <div class="info-card-title">Compression Overview</div>
+      <div class="info-card-title">File Details</div>
       <div class="info-rows">
-        <div class="info-row"><span>Original Filename</span><span class="mono">{{ exp.filename }}</span></div>
+        <div class="info-row"><span>Filename</span><span class="mono">{{ exp.filename }}</span></div>
         <div class="info-row"><span>Format</span><span class="type-badge">{{ ext }}</span></div>
-        <div class="info-row"><span>Method Used</span>
+        <div class="info-row"><span>Method used</span>
           <span class="mono">
             {% if is_retained %}
-            ORIGINAL RETAINED (Fallback: No size reduction)
+              Original retained
             {% else %}
-            {{ (exp.selected_codec or 'Adaptive')|upper }}
+              {{ (exp.selected_codec or 'Adaptive')|upper }}
             {% endif %}
           </span>
         </div>
-        <div class="info-row"><span>Lossless Status</span><span class="mono text-green">{{ 'Decoded-frame identical: PASS' if is_video else ('Sample-identical verification: PASS' if is_audio else 'Pixel-identical verification: PASS') }}</span></div>
-        <div class="info-row"><span>Processing Time</span><span class="mono">{{ "%.1f"|format(exp.compression_time_ms or 0) }} ms</span></div>
-        <div class="info-row"><span>Output Download Format</span><span class="mono">Valid standard .{{ exp.filename.split('.')[-1].lower() }}</span></div>
+        <div class="info-row"><span>Lossless verification</span>
+          <span class="{% if verified %}verify-pass{% else %}verify-fail{% endif %}">
+            {% if verified %}✓ Pass{% else %}✗ Fail{% endif %}
+          </span>
+        </div>
+        <div class="info-row"><span>Output format</span><span class="mono">.{{ exp.filename.split('.')[-1].lower() }}</span></div>
       </div>
     </div>
 
     {% if is_video %}
     <div class="info-card">
-      <div class="info-card-title">Video Stream Properties &amp; Metadata</div>
+      <div class="info-card-title">Video Properties</div>
       <div class="info-rows">
-        <div class="info-row"><span>Video Codec</span><span class="mono">{{ exp.video_codec or 'N/A' }}</span></div>
+        <div class="info-row"><span>Video codec</span><span class="mono">{{ exp.video_codec or 'N/A' }}</span></div>
         <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} px</span></div>
-        <div class="info-row"><span>Frame Rate</span><span class="mono">{{ "%.2f"|format(exp.fps or 0) }} fps</span></div>
-        <div class="info-row"><span>Frame Count</span><span class="mono">{{ exp.frame_count or 'N/A' }}</span></div>
-        {% if exp.duration_seconds %}
-        <div class="info-row"><span>Duration</span><span>{{ "%.3f"|format(exp.duration_seconds) }} s</span></div>
-        {% endif %}
-        <div class="info-row"><span>Audio Track</span>
+        <div class="info-row"><span>Frame rate</span><span class="mono">{{ "%.2f"|format(exp.fps or 0) }} fps</span></div>
+        <div class="info-row"><span>Frames</span><span class="mono">{{ exp.frame_count or 'N/A' }}</span></div>
+        {% if exp.duration_seconds %}<div class="info-row"><span>Duration</span><span>{{ "%.2f"|format(exp.duration_seconds) }} s</span></div>{% endif %}
+        <div class="info-row"><span>Audio track</span>
           {% if exp.has_audio %}
-          <span class="badge badge-audio">PRESENT (Preserved)</span>
+          <span class="badge badge-audio">Present — preserved</span>
           {% else %}
-          <span class="type-badge">NONE</span>
+          <span class="muted">None</span>
           {% endif %}
         </div>
-        <div class="info-row"><span>Decoded Frame Entropy</span><span class="mono">{{ "%.4f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
-        <div class="info-row"><span>Residual Entropy</span><span class="mono">{{ "%.4f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
       </div>
     </div>
     {% elif is_audio %}
     <div class="info-card">
-      <div class="info-card-title">Audio Properties &amp; Metadata</div>
+      <div class="info-card-title">Audio Properties</div>
       <div class="info-rows">
-        <div class="info-row"><span>Sample Rate</span><span class="mono">{{ exp.sample_rate or 44100 }} Hz</span></div>
+        <div class="info-row"><span>Sample rate</span><span class="mono">{{ exp.sample_rate or 44100 }} Hz</span></div>
         <div class="info-row"><span>Channels</span><span>{{ exp.channels or 1 }}</span></div>
-        <div class="info-row"><span>Bit Depth</span><span>{{ exp.bits_per_sample or 16 }} bits per sample</span></div>
-        {% if exp.duration_seconds %}
-        <div class="info-row"><span>Duration</span><span>{{ "%.3f"|format(exp.duration_seconds) }} s</span></div>
-        {% endif %}
-        <div class="info-row"><span>Original Entropy</span><span class="mono">{{ "%.4f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
-        <div class="info-row"><span>Output Entropy</span><span class="mono">{{ "%.4f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
+        <div class="info-row"><span>Bit depth</span><span>{{ exp.bits_per_sample or 16 }}-bit</span></div>
+        {% if exp.duration_seconds %}<div class="info-row"><span>Duration</span><span>{{ "%.2f"|format(exp.duration_seconds) }} s</span></div>{% endif %}
       </div>
     </div>
     {% else %}
     <div class="info-card">
-      <div class="info-card-title">Image Dimensions &amp; Properties</div>
+      <div class="info-card-title">Image Properties</div>
       <div class="info-rows">
         {% if exp.width and exp.height %}
         <div class="info-row"><span>Dimensions</span><span>{{ exp.width }} × {{ exp.height }} px</span></div>
         {% endif %}
         {% if exp.bpp %}
-        <div class="info-row"><span>Color Depth</span><span>{{ exp.bpp }} bits per pixel</span></div>
+        <div class="info-row"><span>Colour depth</span><span>{{ exp.bpp }} bits per pixel</span></div>
         {% endif %}
-        <div class="info-row"><span>Original Entropy</span><span class="mono">{{ "%.4f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
-        <div class="info-row"><span>Output Entropy</span><span class="mono">{{ "%.4f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
       </div>
     </div>
     {% endif %}
 
-    {% if exp.rle_size or exp.huffman_size %}
-    <div class="info-card">
-      <div class="info-card-title">AHLC Candidate Codec Metrics</div>
-      <div class="info-rows">
-        <div class="info-row"><span>Predictor</span><span class="mono">{{ 'Spatial + Inter-frame Delta' if is_video else ('Delta (C++)' if is_audio else 'Left-Neighbour (C++)') }}</span></div>
-        <div class="info-row"><span>RLE Candidate Payload</span><span>{{ fmt_bytes(exp.rle_size) }}</span></div>
-        <div class="info-row"><span>Huffman Candidate Payload</span><span>{{ fmt_bytes(exp.huffman_size) }}</span></div>
-        <div class="info-row"><span>Evaluated Candidate Winner</span><span class="codec-badge">{{ (exp.candidate_codec or exp.selected_codec or '—')|upper }}</span></div>
-        {% if is_retained %}
-        <div class="info-row"><span>Action Taken</span><span class="mono" style="color:#e3b341">Original Retained (All candidates &gt; original file)</span></div>
-        {% endif %}
+    <!-- Technical details (collapsed by default) -->
+    <details class="tech-details">
+      <summary>Technical Details</summary>
+      <div class="tech-details-body">
+        <div class="info-rows" style="margin-top:12px">
+          {% if is_retained %}
+          <div class="info-row"><span>Evaluated candidate</span><span class="codec-badge">{{ (exp.candidate_codec or exp.selected_codec or '—')|upper }}</span></div>
+          <div class="info-row"><span>Fallback reason</span><span class="muted">All candidates larger than input</span></div>
+          {% else %}
+          <div class="info-row"><span>Selected codec</span><span class="codec-badge">{{ (exp.selected_codec or '—')|upper }}</span></div>
+          {% endif %}
+          {% if exp.rle_size %}<div class="info-row"><span>RLE candidate size</span><span>{{ fmt_bytes(exp.rle_size) }}</span></div>{% endif %}
+          {% if exp.huffman_size %}<div class="info-row"><span>Huffman candidate size</span><span>{{ fmt_bytes(exp.huffman_size) }}</span></div>{% endif %}
+          {% if exp.predictor %}<div class="info-row"><span>Predictor</span><span class="mono">{{ exp.predictor }}</span></div>{% endif %}
+          <div class="info-row"><span>Shannon entropy (raw)</span><span class="mono">{{ "%.4f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
+          <div class="info-row"><span>Residual entropy</span><span class="mono">{{ "%.4f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
+        </div>
       </div>
-    </div>
-    {% endif %}
+    </details>
+
   </div>
 
   <!-- Right: Charts -->
@@ -175,25 +191,21 @@
     </div>
     {% if exp.rle_size and exp.huffman_size %}
     <div class="chart-card">
-      <div class="info-card-title">AHLC Codec Candidates (bytes)</div>
+      <div class="info-card-title">Codec Candidate Comparison</div>
       <canvas id="codecChart" height="180"></canvas>
     </div>
     {% endif %}
-    <div class="chart-card">
-      <div class="info-card-title">Entropy Comparison (bits/byte)</div>
-      <canvas id="entropyChart" height="140"></canvas>
-    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-const CHART_FONT = "'Inter', sans-serif";
-const GRID = 'rgba(255,255,255,0.06)';
-const TEXT = '#8b949e';
-Chart.defaults.font.family = CHART_FONT;
-Chart.defaults.color = TEXT;
+const isDark = () => document.documentElement.getAttribute('data-theme') !== 'light';
+function gridColor()  { return isDark() ? 'rgba(45,50,64,0.6)' : 'rgba(200,205,215,0.5)'; }
+function textColor()  { return isDark() ? '#7a8394' : '#6b7385'; }
+
+Chart.defaults.font.family = "'Inter', sans-serif";
 
 function barChart(id, labels, values, colors) {
   const el = document.getElementById(id);
@@ -201,46 +213,37 @@ function barChart(id, labels, values, colors) {
   new Chart(el, {
     type: 'bar',
     data: {
-      labels: labels,
-      datasets: [{
-        data: values,
-        backgroundColor: colors,
-        borderRadius: 4,
-        maxBarThickness: 48
-      }]
+      labels,
+      datasets: [{ data: values, backgroundColor: colors, borderRadius: 4, maxBarThickness: 52 }]
     },
     options: {
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { display: false } },
-        y: { grid: { color: GRID }, ticks: { color: TEXT } }
+        x: { grid: { display: false }, ticks: { color: textColor() } },
+        y: { grid: { color: gridColor() }, ticks: { color: textColor() } }
       }
     }
   });
 }
 
-// 1. File Size Chart
+const accent     = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2eb88a';
+const muted      = getComputedStyle(document.documentElement).getPropertyValue('--bg3').trim()   || '#20242f';
+const yellow     = '#c59b3a';
+const isRetained = {{ 'true' if is_retained else 'false' }};
+
 barChart('sizeChart',
-  ['Original File', 'Output File'],
+  ['Original', 'Output'],
   [{{ exp.original_size or 0 }}, {{ exp.compressed_size or 0 }}],
-  ['#4a5568', '#00d4aa']
+  [muted, isRetained ? yellow : accent]
 );
 
 {% if exp.rle_size and exp.huffman_size %}
-// 2. Codec Candidate Chart
 barChart('codecChart',
   ['RLE Candidate', 'Huffman Candidate', '{{ 'Retained Original' if is_retained else 'Chosen Output' }}'],
   [{{ exp.rle_size or 0 }}, {{ exp.huffman_size or 0 }}, {{ exp.compressed_size or 0 }}],
-  ['#805ad5', '#3182ce', '{{ '#e3b341' if is_retained else '#00d4aa' }}']
+  ['#7c74c4', '#4b8ecb', isRetained ? yellow : accent]
 );
 {% endif %}
-
-// 3. Entropy Chart
-barChart('entropyChart',
-  ['Original Entropy', 'Output Entropy'],
-  [{{ "%.4f"|format(exp.original_entropy or 0) }}, {{ "%.4f"|format(exp.residual_entropy or 0) }}],
-  ['#e53e3e', '#38b2ac']
-);
 </script>
 {% endblock %}

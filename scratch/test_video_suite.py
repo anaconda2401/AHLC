@@ -243,9 +243,9 @@ class TestVideoCompressionSuite(unittest.TestCase):
         # Result page
         r_page = client.get(f"/result/{exp_id}")
         self.assertEqual(r_page.status_code, 200)
-        self.assertIn(b"Video Compression Result", r_page.data)
-        self.assertIn(b"Frame Lossless Verify", r_page.data)
-        self.assertIn(b"PASS", r_page.data)
+        self.assertIn(b"Compression Result", r_page.data)
+        self.assertIn(b"decoded-frame lossless", r_page.data)
+        self.assertTrue(b"Pass" in r_page.data or b"PASS" in r_page.data)
 
         # Download video
         d_resp = client.get(f"/download/{exp_id}/video")

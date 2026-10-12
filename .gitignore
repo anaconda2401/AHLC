@@ -1,8 +1,8 @@
 # ================================================================
-# AHLC — .gitignore
+# AHLC — Adaptive Hybrid Lossless Compression (.gitignore)
 # ================================================================
 
-# ── CMake / Build ────────────────────────────────────────────────
+# ── CMake & Compiler Build Artifacts ────────────────────────────
 build/
 out/
 cmake-build-*/
@@ -12,22 +12,37 @@ cmake_install.cmake
 install_manifest.txt
 CTestTestfile.cmake
 _deps/
+compile_commands.json
+*.ninja
+.ninja_*
+
+# MSVC / Visual Studio
 *.vcxproj.user
 *.vcxproj.filters
 *.sln
 .vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.opendb
+*.ipch
 
-# Compiled binary (keep source, not the binary)
+# Compiled binaries, object files & link libraries
 *.exe
 *.dll
 *.obj
+*.o
+*.lib
+*.a
 *.pdb
 *.ilk
 *.exp
-*.lib
+
+# vcpkg package manager
 vcpkg_installed/
-scratch/*
-!scratch/*.py
+.vcpkg/
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/
@@ -44,74 +59,72 @@ ENV/
 env.bak/
 venv.bak/
 
-# pip
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Distribution / packaging
+# Package, test & lint tooling
 dist/
 .eggs/
 *.egg-info/
 *.egg
-
-# pytest
 .pytest_cache/
 .tox/
 htmlcov/
 .coverage
+.coverage.*
 coverage.xml
-
-# mypy / type checkers
 .mypy_cache/
 .dmypy.json
 dmypy.json
 .pytype/
+pip-log.txt
+pip-delete-this-directory.txt
 
-# ── Flask / AHLC Runtime ─────────────────────────────────────────
-# SQLite database (runtime, not version-controlled)
+# ── Flask / AHLC Runtime & Database ──────────────────────────────
+# SQLite database (runtime data, not version-controlled)
 flask_app/ahlc.db
 flask_app/*.db
 flask_app/*.db-shm
 flask_app/*.db-wal
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 
-# Uploaded and processed media files
-uploads/
-outputs/
+# Uploaded and processed multimedia files (preserve directory via .gitkeep)
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
 reports/
 
-# Temporary test files created by ahmc test suites
+# Temporary media & test artifacts
 *.tmp
 __*.bmp
 __*.ahmc
 __*.wav
 __*.bin
+__*.avi
+__*.mp4
+__*.flac
+__*.png
 bitio_test_tmp.bin
-*_tmp_verify.bmp
-*_tmp_verify.wav
-__verify_tmp.bmp
-__verify_tmp.wav
+format_test_tmp.bmp
+*_tmp_verify.*
+*_tmp_*
+__verify_tmp.*
 
-# ── IDEs ─────────────────────────────────────────────────────────
-# Visual Studio Code
+# Scratch directory (ignore all generated artifacts, keep Python test scripts)
+scratch/*
+!scratch/*.py
+!scratch/**/.gitkeep
+
+# ── IDEs & Editors ───────────────────────────────────────────────
 .vscode/
 *.code-workspace
-
-# Visual Studio
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-.vs/
-
-# JetBrains (CLion, PyCharm)
 .idea/
 *.iml
 *.iws
-cmake-build-debug/
-cmake-build-release/
 
-# ── OS ───────────────────────────────────────────────────────────
-# Windows
+# ── OS Generated Files ───────────────────────────────────────────
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
@@ -119,31 +132,22 @@ ehthumbs_vista.db
 Desktop.ini
 $RECYCLE.BIN/
 *.lnk
-
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
 .Spotlight-V100
 .Trashes
-
-# Linux
 *~
 .fuse_hidden*
 .directory
 .Trash-*
 .nfs*
 
-# ── Logs / Temp ──────────────────────────────────────────────────
+# ── Environment & Secrets ────────────────────────────────────────
+.env
+.env.*
 *.log
 *.bak
 *.swp
 *.swo
-*~
-
-# ── Keep these directories (with .gitkeep) ───────────────────────
-# uploads/ and outputs/ are gitignored above but the directories
-# should exist. Add a .gitkeep inside each if needed:
-#   uploads/.gitkeep
-#   outputs/.gitkeep

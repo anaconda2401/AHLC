@@ -174,6 +174,18 @@ def history():
 
 
 # ================================================================
+# Clear History  POST /clear_history or POST /history/clear
+# ================================================================
+@app.route("/clear_history", methods=["POST"])
+@app.route("/history/clear", methods=["POST"])
+def clear_history():
+    count = db.clear_all_experiments()
+    flash(f"Cleared {count} experiment{'s' if count != 1 else ''} from history.", "success")
+    return redirect(url_for("history"))
+
+
+
+# ================================================================
 # Report  GET /report/<id>
 # ================================================================
 @app.route("/report/<int:exp_id>")
