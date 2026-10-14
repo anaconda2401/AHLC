@@ -566,6 +566,15 @@ bool decompress_video_teabps(const std::string& ahmc_path, RawYUVSequence& seq) 
         return false;
     }
 
+    in.seekg(0, std::ios::end);
+    const uint64_t file_len = static_cast<uint64_t>(in.tellg());
+    in.seekg(0, std::ios::beg);
+
+    if (file_len < 41) {
+        std::cerr << "Video TEABPS Decoder: File too small for AHLV header (" << file_len << " bytes).\n";
+        return false;
+    }
+
     // 1. Read & Validate Header
     char magic[4] = {};
     in.read(magic, 4);
@@ -624,6 +633,12 @@ bool decompress_video_teabps(const std::string& ahmc_path, RawYUVSequence& seq) 
         return false;
     }
 
+    const uint64_t min_meta_table_len = 41ULL + static_cast<uint64_t>(total_blocks) * 6ULL;
+    if (min_meta_table_len > file_len) {
+        std::cerr << "Video TEABPS Decoder: Truncated file (cannot contain block metadata table).\n";
+        return false;
+    }
+
     // 2. Read Block Table
     struct BlockMeta {
         uint8_t pred = 0;
@@ -631,6 +646,7 @@ bool decompress_video_teabps(const std::string& ahmc_path, RawYUVSequence& seq) 
         uint32_t payload_size = 0;
     };
     std::vector<BlockMeta> meta_table(total_blocks);
+    uint64_t sum_payloads = 0;
     for (size_t b = 0; b < total_blocks; ++b) {
         meta_table[b].pred = static_cast<uint8_t>(in.get());
         meta_table[b].codec = static_cast<uint8_t>(in.get());
@@ -639,6 +655,12 @@ bool decompress_video_teabps(const std::string& ahmc_path, RawYUVSequence& seq) 
             std::cerr << "Video TEABPS Decoder: Corrupted predictor or codec identifier.\n";
             return false;
         }
+        sum_payloads += meta_table[b].payload_size;
+    }
+
+    if (min_meta_table_len + sum_payloads > file_len) {
+        std::cerr << "Video TEABPS Decoder: Truncated file (declared block payloads exceed container file size).\n";
+        return false;
     }
 
     // 3. Reconstruct Frames

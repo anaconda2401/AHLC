@@ -1284,14 +1284,17 @@ def calculate_adaptive_residuals_metrics(raw_bytes: bytes, total_bytes: Optional
 # ----------------------------------------------------------------
 # Video TEABPS Engine Integration
 # ----------------------------------------------------------------
-def run_video_teabps(input_path: Path, output_dir: Path, block_size: int = 16, max_frames: int = 0) -> dict:
+def run_video_teabps(input_path: Path, output_dir: Path, block_size: int = 16, max_frames: int = 0, container_path: Optional[Path] = None) -> dict:
     """
     Run C++ TEABPS video compression engine on input video file.
     Decodes video into canonical planar YUV420p sequence, evaluates NONE, TEMPORAL-D1,
     TEMPORAL-D2 block by block across RLE, Huffman, RAW codecs based on exact byte cost,
     writes AHLV v3 container, decompresses to verify 100% sample identity, and returns stats.
     """
-    teabps_ahmc = output_dir / (input_path.stem + "_teabps.ahmc")
+    if container_path is not None:
+        teabps_ahmc = container_path
+    else:
+        teabps_ahmc = output_dir / (input_path.stem + "_teabps.ahlv")
     args = ["video-teabps-compress", str(input_path), str(teabps_ahmc), "--block-size", str(block_size), "--json"]
     if max_frames > 0:
         args.extend(["--max-frames", str(max_frames)])
@@ -1332,7 +1335,8 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
     candidate_codec = metrics.get("candidate_codec") or metrics.get("selected_codec", "rle")
 
     # 1. Run TEABPS Video Compression Engine
-    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16)
+    teabps_container = output_path.parent / (output_path.stem + "_teabps.ahlv")
+    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16, container_path=teabps_container)
     t_data = teabps_info["data"]
     teabps_ahmc_sz = teabps_info["container_size"]
     raw_uncompressed_bytes = t_data.get("original_raw_bytes", est_raw_total)
@@ -1519,7 +1523,8 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
     candidate_codec = metrics.get("candidate_codec") or metrics.get("selected_codec", "huffman")
 
     # 1. Run TEABPS Video Compression Engine on decoded raw frames
-    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16)
+    teabps_container = output_path.parent / (output_path.stem + "_teabps.ahlv")
+    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16, container_path=teabps_container)
     t_data = teabps_info["data"]
     teabps_ahmc_sz = teabps_info["container_size"]
     raw_uncompressed_bytes = t_data.get("original_raw_bytes", est_raw_total)

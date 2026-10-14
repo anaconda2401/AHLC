@@ -391,6 +391,15 @@ bool decompress_image_eabps(const std::string& ahmc_path, const std::string& bmp
         return false;
     }
 
+    in.seekg(0, std::ios::end);
+    const uint64_t file_len = static_cast<uint64_t>(in.tellg());
+    in.seekg(0, std::ios::beg);
+
+    if (file_len < 29) {
+        std::cerr << "EABPS Decoder: File too small for AHMC header (" << file_len << " bytes).\n";
+        return false;
+    }
+
     // 1. Validate magic and version
     char magic[4] = {};
     in.read(magic, 4);
@@ -440,6 +449,12 @@ bool decompress_image_eabps(const std::string& ahmc_path, const std::string& bmp
     const uint64_t expected_total_bytes = static_cast<uint64_t>(width) * height * (bpp / 8u);
     if (static_cast<uint64_t>(orig_px_bytes) != expected_total_bytes) {
         std::cerr << "EABPS Decoder: Original pixel byte count mismatch.\n";
+        return false;
+    }
+
+    const uint64_t min_expected_size = 29ULL + static_cast<uint64_t>(total_blocks) * 6ULL + static_cast<uint64_t>(total_payload);
+    if (min_expected_size > file_len) {
+        std::cerr << "EABPS Decoder: Truncated container file (declared data exceeds file size).\n";
         return false;
     }
 

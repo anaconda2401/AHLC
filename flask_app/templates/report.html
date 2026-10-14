@@ -9,9 +9,10 @@
   </div>
   <div class="header-actions">
     <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-ghost">&larr; Back to Result</a>
-    <a href="{{ url_for('download_ahmc', exp_id=exp.id) }}" class="btn btn-ghost" title="Download compressed AHMC container bitstream">
+    {% set is_vid_hdr = (exp.media_type == 'video' or exp.filename.split('.')[-1].lower() in ['avi', 'mp4']) %}
+    <a href="{{ url_for('download_ahmc', exp_id=exp.id) }}" class="btn btn-ghost" title="Download compressed {% if is_vid_hdr %}AHLV video{% else %}AHMC{% endif %} container bitstream">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      .AHMC Container
+      {% if is_vid_hdr %}.AHLV Container{% else %}.AHMC Container{% endif %}
     </a>
     <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -397,8 +398,15 @@
           <div class="verify-status">{{ "PASS — Exact lossless reconstruction" if exp.verification else "FAIL — Mismatch detected" }}</div>
           <div class="verify-desc">
             {% if exp.verification %}
-            The decompressed output is bit-identical to the original input.
-            Every {{ "decoded video frame" if is_vid else ("pixel" if is_img else "PCM sample") }} matches exactly.
+              {% if is_vid %}
+                <strong>Canonical-Frame Identity:</strong> 100% exact sample-for-sample identical reconstruction of decoded YUV420p video sequence.<br>
+                <strong>Decoded Source-Frame Identity:</strong> Preserved for native YUV420p video streams. (Non-YUV420p input formats like RGB24 or YUV444p are subsampled to canonical YUV420p via bilinear scaling during ingestion).<br>
+                <strong>Container Bitstream Identity:</strong> {{ 'Preserved (original container retained via fallback).' if is_retained else 'Replaced by optimized lossless bitstream.' }}
+              {% elif is_img %}
+                Exact bit-identical reconstruction &mdash; every pixel channel value matches the original input.
+              {% else %}
+                Exact bit-identical reconstruction &mdash; every PCM audio sample across all channels matches the original input.
+              {% endif %}
             {% else %}
             Decompressed output differs from the original. This should not occur with correct lossless files.
             {% endif %}

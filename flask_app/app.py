@@ -237,6 +237,7 @@ def download_image(exp_id):
 
 
 @app.route("/download/<int:exp_id>/ahmc")
+@app.route("/download/<int:exp_id>/ahlv")
 def download_ahmc(exp_id):
     exp = db.get_experiment(exp_id)
     if not exp:
@@ -245,21 +246,36 @@ def download_ahmc(exp_id):
     if not p_str:
         abort(404)
     base_p = Path(p_str)
+    sid = exp.get("session_id", "")
+    orig_name = exp["filename"]
+    orig_stem = Path(orig_name).stem
+    is_video = (exp.get("media_type") == "video" or orig_name.lower().endswith((".avi", ".mp4")))
+
     candidates = [
-        base_p.with_suffix(".ahmc"),
+        base_p.parent / f"{base_p.stem}_teabps.ahlv",
         base_p.parent / f"{base_p.stem}_teabps.ahmc",
+        base_p.parent / f"{base_p.stem.replace('_compressed', '')}_teabps.ahlv",
         base_p.parent / f"{base_p.stem.replace('_compressed', '')}_teabps.ahmc",
         base_p.parent / f"{base_p.stem}_eabps.ahmc",
         base_p.parent / f"{base_p.stem.replace('_compressed', '')}_eabps.ahmc",
         base_p.parent / f"{base_p.stem}_internal.ahmc",
         base_p.parent / f"{base_p.stem.replace('_compressed', '')}_internal.ahmc",
+        base_p.with_suffix(".ahlv"),
+        base_p.with_suffix(".ahmc"),
     ]
+    if sid:
+        candidates.extend(base_p.parent.glob(f"{sid}*_teabps.*"))
+        candidates.extend(base_p.parent.glob(f"{sid}*_eabps.*"))
+        candidates.extend(base_p.parent.glob(f"{sid}*.ahlv"))
+        candidates.extend(base_p.parent.glob(f"{sid}*.ahmc"))
+
     for c in candidates:
-        if c.exists():
+        if c.exists() and c.is_file():
+            out_ext = ".ahlv" if (is_video or c.suffix == ".ahlv") else ".ahmc"
             return send_file(
                 str(c),
                 as_attachment=True,
-                download_name=f"{Path(exp['filename']).stem}.ahmc",
+                download_name=f"{orig_stem}{out_ext}",
                 mimetype="application/octet-stream"
             )
     abort(404)

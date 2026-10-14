@@ -376,6 +376,15 @@ bool decompress_audio_eabps(const std::string& ahmc_path,
         return false;
     }
 
+    in.seekg(0, std::ios::end);
+    const uint64_t file_len = static_cast<uint64_t>(in.tellg());
+    in.seekg(0, std::ios::beg);
+
+    if (file_len < 31) {
+        std::cerr << "Audio EABPS Decoder: File too small for AHLA header (" << file_len << " bytes).\n";
+        return false;
+    }
+
     // 1. Validate magic & version
     char magic[4] = {};
     in.read(magic, 4);
@@ -424,8 +433,15 @@ bool decompress_audio_eabps(const std::string& ahmc_path,
         return false;
     }
 
+    const uint64_t min_meta_table_len = 31ULL + static_cast<uint64_t>(total_blocks) * 6ULL;
+    if (min_meta_table_len > file_len) {
+        std::cerr << "Audio EABPS Decoder: Truncated file (cannot contain block metadata table).\n";
+        return false;
+    }
+
     // 3. Read block metadata table
     std::vector<AudioEABPSBlockRecord> blocks(total_blocks);
+    uint64_t sum_payloads = 0;
     for (uint32_t b = 0; b < total_blocks; ++b) {
         uint8_t pred = 0, codec = 0;
         in.read(reinterpret_cast<char*>(&pred), 1);
@@ -446,6 +462,12 @@ bool decompress_audio_eabps(const std::string& ahmc_path,
         blocks[b].predictor    = pred;
         blocks[b].codec        = codec;
         blocks[b].payload_size = payload_sz;
+        sum_payloads += payload_sz;
+    }
+
+    if (min_meta_table_len + sum_payloads > file_len) {
+        std::cerr << "Audio EABPS Decoder: Truncated file (declared block payloads exceed container file size).\n";
+        return false;
     }
 
     // 4. Allocate full output PCM buffer
