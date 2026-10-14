@@ -491,26 +491,45 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
     t0 = time.perf_counter()
     orig_size = input_path.stat().st_size
 
-    # 1. Run AHLC C++ engine: spatial predictor + adaptive RLE/Huffman -> .ahmc
+    # 1. Run AHLC Baseline C++ engine: spatial predictor + adaptive RLE/Huffman -> .ahmc
     internal_ahmc = output_path.parent / (output_path.stem + "_internal.ahmc")
     c_res = _run("image-compress", str(input_path), str(internal_ahmc), "--json")
     c_data = _parse_json(c_res) or {}
 
-    # 2. Decompress from .ahmc back to standard BMP
+    # 2. Decompress baseline from .ahmc back to standard BMP
     reconstructed_bmp = output_path.parent / (output_path.stem + "_decompressed.bmp")
     dec = _run("image-decompress", str(internal_ahmc), str(reconstructed_bmp))
 
+    # 3. Run AHLC EABPS C++ engine: Entropy-Aware Block-wise Predictor Selection
+    eabps_ahmc = output_path.parent / (output_path.stem + "_eabps.ahmc")
+    e_res = _run("image-eabps-compress", str(input_path), str(eabps_ahmc), "--json")
+    e_data = _parse_json(e_res) or {}
+
+    # 4. Decompress EABPS .ahmc back to standard BMP
+    reconstructed_eabps_bmp = output_path.parent / (output_path.stem + "_eabps_decompressed.bmp")
+    dec_e = _run("image-eabps-decompress", str(eabps_ahmc), str(reconstructed_eabps_bmp))
+
     candidates = []
 
-    # Candidate A: Standard reconstructed BMP from AHLC engine
+    # Candidate A: Standard reconstructed BMP from baseline AHLC engine
     if reconstructed_bmp.exists() and verify_pixels_identical(input_path, reconstructed_bmp):
         candidates.append((
             reconstructed_bmp.stat().st_size,
             reconstructed_bmp,
-            "AHLC Spatial Predictor + Adaptive Codec (Reconstructed BMP)"
+            "AHLC Baseline (Spatial Predictor + Adaptive Codec)",
+            "baseline"
         ))
 
-    # Candidate B: Palette-optimized BMP (if image has <= 256 unique colors, 8-bit palette BMP saves 50-80% losslessly)
+    # Candidate B: EABPS reconstructed BMP from AHLC EABPS engine
+    if reconstructed_eabps_bmp.exists() and verify_pixels_identical(input_path, reconstructed_eabps_bmp):
+        candidates.append((
+            reconstructed_eabps_bmp.stat().st_size,
+            reconstructed_eabps_bmp,
+            "AHLC EABPS (Entropy-Aware Block-wise Predictor Selection)",
+            "eabps"
+        ))
+
+    # Candidate C: Palette-optimized BMP (if image has <= 256 unique colors, 8-bit palette BMP saves 50-80% losslessly)
     try:
         with Image.open(input_path) as im:
             img_rgb = im.convert("RGB")
@@ -535,12 +554,13 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
                     candidates.append((
                         pal_candidate.stat().st_size,
                         pal_candidate,
-                        "Lossless 8-bit Paletted BMP"
+                        "Lossless 8-bit Paletted BMP",
+                        "palette"
                     ))
     except Exception:
         pass
 
-    # Candidate C: 32-bit to 24-bit optimization if alpha is 100% opaque
+    # Candidate D: 32-bit to 24-bit optimization if alpha is 100% opaque
     try:
         with Image.open(input_path) as im:
             if im.mode == "RGBA":
@@ -552,17 +572,18 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
                         candidates.append((
                             rgb_candidate.stat().st_size,
                             rgb_candidate,
-                            "Lossless 24-bit BGR Optimization (Opaque Alpha)"
+                            "Lossless 24-bit BGR Optimization (Opaque Alpha)",
+                            "rgb24"
                         ))
     except Exception:
         pass
 
-    # Candidate D: Original input BMP
-    candidates.append((orig_size, input_path, "Original BMP (Minimal Representation)"))
+    # Candidate E: Original input BMP (fallback)
+    candidates.append((orig_size, input_path, "Original BMP (Minimal Representation)", "original"))
 
     # Sort candidates by size ascending to select smallest valid representation
     candidates.sort(key=lambda x: x[0])
-    best_size, best_path, best_method = candidates[0]
+    best_size, best_path, best_method, best_kind = candidates[0]
 
     # Save to final output BMP
     final_bmp = output_path.with_suffix(".bmp")
@@ -578,8 +599,9 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
     ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
 
     is_fallback = (bytes_saved <= 0)
-    candidate_codec = c_data.get("selected_codec", "adaptive")
-    ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    baseline_ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
+
     if is_fallback:
         bytes_saved = 0
         space_saved = 0.0
@@ -589,14 +611,24 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
         best_method = "Original BMP Retained (No size reduction)"
         container_overhead = 0
     else:
-        selected_codec = candidate_codec
         fallback_reason = ""
-        wp = min(c_data.get("rle_size", 0), c_data.get("huffman_size", 0))
-        container_overhead = max(0, ahmc_sz - wp) if ahmc_sz and wp else 39
+        if best_kind == "eabps":
+            selected_codec = "eabps"
+            container_overhead = e_data.get("container_overhead", 125)
+        elif best_kind == "baseline":
+            selected_codec = c_data.get("selected_codec", "adaptive")
+            wp = min(c_data.get("rle_size", 0), c_data.get("huffman_size", 0))
+            container_overhead = max(0, baseline_ahmc_sz - wp) if baseline_ahmc_sz and wp else 39
+        else:
+            selected_codec = best_kind
+            container_overhead = 0
 
-    w = c_data.get("width", 0)
-    h = c_data.get("height", 0)
-    bpp = c_data.get("bpp", 0)
+    candidate_codec = "eabps" if (eabps_ahmc_sz > 0 and eabps_ahmc_sz <= baseline_ahmc_sz) else c_data.get("selected_codec", "adaptive")
+    ahmc_sz = eabps_ahmc_sz if (eabps_ahmc_sz > 0 and (baseline_ahmc_sz == 0 or eabps_ahmc_sz <= baseline_ahmc_sz)) else baseline_ahmc_sz
+
+    w = e_data.get("width") or c_data.get("width", 0)
+    h = e_data.get("height") or c_data.get("height", 0)
+    bpp = e_data.get("bpp") or c_data.get("bpp", 0)
     if w == 0 or h == 0:
         try:
             with Image.open(input_path) as im:
@@ -604,6 +636,11 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
                 bpp = len(im.getbands()) * 8
         except Exception:
             pass
+
+    # Clean EABPS statistics from real experiment
+    eabps_ratio = round(orig_size / eabps_ahmc_sz, 3) if eabps_ahmc_sz > 0 else 1.0
+    eabps_saved = round((orig_size - eabps_ahmc_sz) / orig_size * 100.0, 2) if (orig_size > 0 and eabps_ahmc_sz > 0) else 0.0
+    baseline_ratio = round(orig_size / baseline_ahmc_sz, 3) if baseline_ahmc_sz > 0 else 1.0
 
     return {
         "ok": True,
@@ -619,10 +656,10 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
         "verification": verified,
         "verification_label": "Pixel-identical verification: PASS" if verified else "Verification: FAIL",
         "compression_time_ms": comp_ms,
-        "decompression_time_ms": c_data.get("decompression_time_ms", 0.0),
+        "decompression_time_ms": e_data.get("decompression_time_ms") or c_data.get("decompression_time_ms", 0.0),
         "compressed_path": str(final_bmp),
         "recovered_path": str(final_bmp),
-        "predictor": c_data.get("predictor", "left"),
+        "predictor": "eabps" if best_kind == "eabps" else c_data.get("predictor", "left"),
         "selected_codec": selected_codec,
         "candidate_codec": candidate_codec,
         "is_fallback": is_fallback,
@@ -631,12 +668,30 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
         "ahmc_container_size": ahmc_sz,
         "rle_size": c_data.get("rle_size", 0),
         "huffman_size": c_data.get("huffman_size", 0),
-        "original_entropy": c_data.get("original_entropy", 0.0),
-        "residual_entropy": c_data.get("residual_entropy", 0.0),
+        "original_entropy": e_data.get("original_entropy") or c_data.get("original_entropy", 0.0),
+        "residual_entropy": e_data.get("residual_entropy") or c_data.get("residual_entropy", 0.0),
         "ahlc_ahmc_size": ahmc_sz,
         "width": w,
         "height": h,
         "bpp": bpp,
+        # EABPS specific real metrics
+        "eabps_compressed_size": eabps_ahmc_sz,
+        "eabps_ratio": eabps_ratio,
+        "eabps_saved_percent": eabps_saved,
+        "eabps_block_size": e_data.get("block_size", 16),
+        "eabps_total_blocks": e_data.get("total_blocks", 0),
+        "eabps_none_count": e_data.get("count_none", 0),
+        "eabps_left_count": e_data.get("count_left", 0),
+        "eabps_up_count": e_data.get("count_up", 0),
+        "eabps_rle_count": e_data.get("count_rle", 0),
+        "eabps_huffman_count": e_data.get("count_huffman", 0),
+        "eabps_raw_count": e_data.get("count_raw", 0),
+        "eabps_payload_size": e_data.get("encoded_payload_size", 0),
+        "eabps_metadata_size": e_data.get("predictor_metadata_size", 0),
+        "eabps_overhead": e_data.get("container_overhead", 0),
+        "eabps_verified": bool(e_data.get("verification", False)),
+        "baseline_compressed_size": baseline_ahmc_sz,
+        "baseline_ratio": baseline_ratio,
     }
 
 

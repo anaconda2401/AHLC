@@ -7,6 +7,7 @@
 #include <functional>
 #include <cmath>
 #include <iomanip>
+#include <algorithm>
 
 #include "analyzer/analyzer.hpp"
 #include "bitio/bit_writer.hpp"
@@ -15,6 +16,7 @@
 #include "rle/rle_decoder.hpp"
 #include "image/image.hpp"
 #include "image/image_predictor.hpp"
+#include "image/eabps.hpp"
 #include "audio/audio.hpp"
 #include "audio/audio_predictor.hpp"
 #include "entropy/huffman.hpp"
@@ -39,6 +41,13 @@ static bool has_flag(int argc, char* argv[], const std::string& flag)
     for (int i = 2; i < argc; ++i)
         if (std::string(argv[i]) == flag) return true;
     return false;
+}
+static std::string get_option_val(int argc, char* argv[], const std::string& opt, const std::string& def = "")
+{
+    for (int i = 2; i < argc - 1; ++i) {
+        if (std::string(argv[i]) == opt) return argv[i + 1];
+    }
+    return def;
 }
 static bool write_bytes(const std::string& path, const std::vector<uint8_t>& data)
 {
@@ -376,6 +385,45 @@ static void print_image_json(const ahlc::ImageCompressStats& s, bool verified)
     std::printf("}\n");
 }
 
+static void print_eabps_json(const ahlc::EABPSCompressStats& s, bool verified)
+{
+    double ratio = (s.compressed_file_size > 0)
+        ? (double)s.original_file_size / s.compressed_file_size : 0.0;
+    double saved = (s.original_file_size > 0)
+        ? (1.0 - (double)s.compressed_file_size / s.original_file_size) * 100.0 : 0.0;
+    std::printf("{\n");
+    std::printf("  \"ok\": true,\n");
+    std::printf("  \"algorithm\": \"EABPS\",\n");
+    std::printf("  \"media_type\": \"image\",\n");
+    std::printf("  \"width\": %u,\n", s.width);
+    std::printf("  \"height\": %u,\n", s.height);
+    std::printf("  \"bpp\": %u,\n", (unsigned)s.bpp);
+    std::printf("  \"block_size\": %u,\n", (unsigned)s.block_size);
+    std::printf("  \"num_blocks_x\": %u,\n", s.num_blocks_x);
+    std::printf("  \"num_blocks_y\": %u,\n", s.num_blocks_y);
+    std::printf("  \"total_blocks\": %u,\n", s.total_blocks);
+    std::printf("  \"original_size\": %llu,\n", (unsigned long long)s.original_file_size);
+    std::printf("  \"compressed_size\": %llu,\n", (unsigned long long)s.compressed_file_size);
+    std::printf("  \"encoded_payload_size\": %llu,\n", (unsigned long long)s.encoded_payload_size);
+    std::printf("  \"predictor_metadata_size\": %llu,\n", (unsigned long long)s.predictor_metadata_size);
+    std::printf("  \"container_overhead\": %llu,\n", (unsigned long long)s.container_overhead);
+    std::printf("  \"compression_ratio\": %.6f,\n", ratio);
+    std::printf("  \"space_saved_percent\": %.4f,\n", saved);
+    std::printf("  \"predictor\": \"eabps\",\n");
+    std::printf("  \"count_none\": %u,\n", s.count_none);
+    std::printf("  \"count_left\": %u,\n", s.count_left);
+    std::printf("  \"count_up\": %u,\n", s.count_up);
+    std::printf("  \"count_rle\": %u,\n", s.count_rle);
+    std::printf("  \"count_huffman\": %u,\n", s.count_huffman);
+    std::printf("  \"count_raw\": %u,\n", s.count_raw);
+    std::printf("  \"original_entropy\": %.6f,\n", s.entropy_before);
+    std::printf("  \"residual_entropy\": %.6f,\n", s.entropy_after);
+    std::printf("  \"original_pixel_bytes\": %llu,\n", (unsigned long long)s.original_pixel_bytes);
+    std::printf("  \"compression_time_ms\": %.3f,\n", s.compression_time_ms);
+    std::printf("  \"verification\": %s\n", verified ? "true" : "false");
+    std::printf("}\n");
+}
+
 static void print_audio_json(const ahlc::AudioCompressStats& s, bool verified)
 {
     double ratio = (s.compressed_file_size > 0)
@@ -428,6 +476,10 @@ static void print_usage()
         <<"  ahmc image-verify <orig.bmp> <rec.bmp>       Verify image\n"
         <<"  ahmc image-test                              Run image tests\n"
         <<"  ahmc image-adaptive-test                     Run adaptive image tests\n"
+        <<"  ahmc image-eabps-compress <in.bmp> <out.ahmc> [--block-size N] [--json]  EABPS compress\n"
+        <<"  ahmc image-eabps-decompress <in.ahmc> <out.bmp> EABPS decompress\n"
+        <<"  ahmc image-eabps-test                        Run EABPS test suite\n"
+        <<"  ahmc image-eabps-benchmark                   Run EABPS benchmark against baseline\n"
         <<"  ahmc audio-analyze <in.wav> [--json]         Audio analysis\n"
         <<"  ahmc audio-predict <in.wav>                  Delta predictor stats\n"
         <<"  ahmc audio-compress <in.wav> <out.ahmc> [--json]  Adaptive audio compress\n"
@@ -539,6 +591,51 @@ int main(int argc, char* argv[])
     if(cmd=="image-verify"){if(argc<4){std::cerr<<"Error: needs <orig.bmp> <rec.bmp>.\n";return 1;}ahlc::BMPImage a,b;if(!ahlc::read_bmp(argv[2],a))return 1;if(!ahlc::read_bmp(argv[3],b))return 1;bool ok=ahlc::images_equal(a,b);std::cout<<"Lossless verification: "<<(ok?"PASS":"FAIL")<<"\n";return ok?0:1;}
     if(cmd=="image-test")         return run_image_test()         ?0:1;
     if(cmd=="image-adaptive-test")return run_image_adaptive_test()?0:1;
+
+    // ---- EABPS ----
+    if (cmd == "image-eabps-compress") {
+        if (argc < 4) { std::cerr << "Error: needs <in.bmp> <out.ahmc> [--block-size N] [--json].\n"; return 1; }
+        bool jm = has_flag(argc, argv, "--json");
+        std::string bs_str = get_option_val(argc, argv, "--block-size", "16");
+        uint16_t bsize = static_cast<uint16_t>(std::clamp(std::atoi(bs_str.c_str()), 1, 1024));
+        ahlc::EABPSCompressStats s;
+        if (!ahlc::compress_image_eabps(argv[2], argv[3], s, bsize)) {
+            if (jm) std::cout << "{\"ok\":false,\"error\":\"EABPS compression failed\"}\n";
+            return 1;
+        }
+        if (jm) {
+            std::string tmp = std::string(argv[3]) + "_tmp_verify.bmp";
+            bool verified = false;
+            if (ahlc::decompress_image_eabps(argv[3], tmp)) {
+                ahlc::BMPImage orig, rec;
+                if (ahlc::read_bmp(argv[2], orig) && ahlc::read_bmp(tmp, rec))
+                    verified = ahlc::images_equal(orig, rec);
+                std::remove(tmp.c_str());
+            }
+            print_eabps_json(s, verified);
+        } else {
+            ahlc::print_eabps_stats(argv[2], argv[3], s);
+            std::string tmp = "__verify_eabps_tmp.bmp";
+            if (ahlc::decompress_image_eabps(argv[3], tmp)) {
+                ahlc::BMPImage orig, rec;
+                if (ahlc::read_bmp(argv[2], orig) && ahlc::read_bmp(tmp, rec)) {
+                    bool ok = ahlc::images_equal(orig, rec);
+                    std::cout << " Lossless verification: " << (ok ? "PASS" : "FAIL") << "\n";
+                    std::cout << "--------------------------------------------\n";
+                }
+                std::remove(tmp.c_str());
+            }
+        }
+        return 0;
+    }
+    if (cmd == "image-eabps-decompress") {
+        if (argc < 4) { std::cerr << "Error: needs <in.ahmc> <out.bmp>.\n"; return 1; }
+        if (!ahlc::decompress_image_eabps(argv[2], argv[3])) return 1;
+        std::cout << "Done: " << argv[3] << "\n";
+        return 0;
+    }
+    if (cmd == "image-eabps-test")      return ahlc::run_eabps_test_suite() ? 0 : 1;
+    if (cmd == "image-eabps-benchmark") return ahlc::run_eabps_benchmark()  ? 0 : 1;
 
     // ---- Audio ----
     if (cmd=="audio-analyze") {

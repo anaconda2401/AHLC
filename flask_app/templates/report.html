@@ -246,9 +246,66 @@
     </div>
   </section>
 
-  <!-- 7. Final Result -->
+  {% if exp.eabps_total_blocks and exp.eabps_total_blocks > 0 %}
+  <!-- 07. EABPS Block-Wise Evaluation -->
   <section class="report-section">
     <div class="report-section-num">07</div>
+    <div class="report-section-body">
+      <h2>EABPS (Entropy-Aware Block-wise Predictor Selection) Evaluation</h2>
+      <p class="report-note" style="margin-bottom:14px">
+        EABPS partitions the image into independent {{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixel blocks,
+        evaluates candidate predictors (NONE, LEFT, UP) and codecs (RLE, Huffman, RAW) per block, and selects the combination
+        yielding the lowest total encoded byte cost including per-block metadata and container overhead.
+      </p>
+      <div class="info-rows">
+        <div class="info-row"><span>Algorithm version</span><span class="mono">AHMC v3 (EABPS Container)</span></div>
+        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixels</span></div>
+        <div class="info-row"><span>Total image blocks</span><span class="mono">{{ exp.eabps_total_blocks }} blocks</span></div>
+        <div class="info-row"><span>Predictor distribution</span>
+          <span class="mono">
+            NONE: {{ exp.eabps_none_count }} ({{ "%.1f"|format(100.0 * exp.eabps_none_count / exp.eabps_total_blocks) }}%) &bull;
+            LEFT: {{ exp.eabps_left_count }} ({{ "%.1f"|format(100.0 * exp.eabps_left_count / exp.eabps_total_blocks) }}%) &bull;
+            UP: {{ exp.eabps_up_count }} ({{ "%.1f"|format(100.0 * exp.eabps_up_count / exp.eabps_total_blocks) }}%)
+          </span>
+        </div>
+        <div class="info-row"><span>Entropy coder distribution</span>
+          <span class="mono">
+            RLE: {{ exp.eabps_rle_count }} &bull; Huffman: {{ exp.eabps_huffman_count }} &bull; RAW: {{ exp.eabps_raw_count }}
+          </span>
+        </div>
+        <div class="info-row"><span>Encoded block payload size</span><span class="mono">{{ fmt_bytes(exp.eabps_payload_size) }} ({{ exp.eabps_payload_size }} bytes)</span></div>
+        <div class="info-row"><span>Predictor metadata size</span><span class="mono">{{ fmt_bytes(exp.eabps_metadata_size) }} (6 bytes/block overhead)</span></div>
+        <div class="info-row"><span>Total container overhead</span><span class="mono">{{ fmt_bytes(exp.eabps_overhead) }} bytes</span></div>
+        <div class="info-row"><span><strong>EABPS AHMC container size</strong></span>
+          <span class="mono"><strong>{{ fmt_bytes(exp.eabps_compressed_size) }}</strong> &nbsp;({{ exp.eabps_compressed_size }} bytes &bull; {{ "%.2f"|format(exp.eabps_ratio) }}x)</span>
+        </div>
+        {% if exp.baseline_compressed_size %}
+        <div class="info-row"><span>Baseline AHMC container size</span>
+          <span class="mono">{{ fmt_bytes(exp.baseline_compressed_size) }} &nbsp;({{ "%.2f"|format(exp.baseline_ratio) }}x)</span>
+        </div>
+        <div class="info-row"><span>EABPS vs Baseline comparison</span>
+          <span class="mono {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}text-green{% else %}muted{% endif %}">
+            {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}
+              EABPS improves compression by {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} over baseline
+            {% else %}
+              Baseline AHMC smaller by {{ fmt_bytes(exp.eabps_compressed_size - exp.baseline_compressed_size) }}
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+        <div class="info-row"><span>Lossless pixel verification</span>
+          <span class="{% if exp.eabps_verified or exp.verification %}verify-pass{% else %}verify-fail{% endif %}">
+            {% if exp.eabps_verified or exp.verification %}&check; PASS &mdash; Exact 100% pixel match{% else %}&cross; FAIL{% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- 8. Final Result -->
+  <section class="report-section">
+    <div class="report-section-num">{% if exp.eabps_total_blocks %}08{% else %}07{% endif %}</div>
     <div class="report-section-body">
       <h2>Final Compression Result</h2>
       <p class="report-note" style="margin-bottom:14px">
@@ -292,7 +349,7 @@
 
   <!-- 8. Timing -->
   <section class="report-section">
-    <div class="report-section-num">08</div>
+    <div class="report-section-num">{% if exp.eabps_total_blocks %}09{% else %}08{% endif %}</div>
     <div class="report-section-body">
       <h2>Timing</h2>
       <div class="info-rows">
@@ -306,7 +363,7 @@
 
   <!-- 9. Lossless Verification -->
   <section class="report-section">
-    <div class="report-section-num">09</div>
+    <div class="report-section-num">{% if exp.eabps_total_blocks %}10{% else %}09{% endif %}</div>
     <div class="report-section-body">
       <h2>Lossless Verification</h2>
       <div class="verify-banner {% if exp.verification %}verify-banner-pass{% else %}verify-banner-fail{% endif %}">

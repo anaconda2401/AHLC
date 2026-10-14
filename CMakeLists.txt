@@ -31,6 +31,7 @@ add_executable(ahmc
     src/rle/rle_decoder.cpp
     src/image/image.cpp
     src/image/image_predictor.cpp
+    src/image/eabps.cpp
     src/audio/audio.cpp
     src/audio/audio_predictor.cpp
     src/entropy/huffman.cpp

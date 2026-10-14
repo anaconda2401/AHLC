@@ -161,6 +161,47 @@
     </div>
     {% endif %}
 
+    {% if exp.eabps_total_blocks and exp.eabps_total_blocks > 0 %}
+    <div class="info-card" style="border:1px solid rgba(46,184,138,0.25)">
+      <div class="info-card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>EABPS Block Compression</span>
+        <span class="badge" style="background:rgba(46,184,138,0.15);color:var(--accent);font-size:0.75rem">AHMC v3</span>
+      </div>
+      <div class="info-rows">
+        <div class="info-row"><span>Algorithm</span><span class="mono">EABPS (Entropy-Aware Block Selection)</span></div>
+        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} × {{ exp.eabps_block_size }} px</span></div>
+        <div class="info-row"><span>Block count</span><span class="mono">{{ exp.eabps_total_blocks }} blocks</span></div>
+        <div class="info-row"><span>Predictors chosen</span>
+          <span class="mono">
+            NONE: {{ exp.eabps_none_count }} · LEFT: {{ exp.eabps_left_count }} · UP: {{ exp.eabps_up_count }}
+          </span>
+        </div>
+        <div class="info-row"><span>Codecs chosen</span>
+          <span class="mono">
+            RLE: {{ exp.eabps_rle_count }} · Huffman: {{ exp.eabps_huffman_count }} · RAW: {{ exp.eabps_raw_count }}
+          </span>
+        </div>
+        <div class="info-row"><span>EABPS container size</span>
+          <span class="mono font-semibold">{{ fmt_bytes(exp.eabps_compressed_size) }} ({{ "%.2f"|format(exp.eabps_ratio) }}x)</span>
+        </div>
+        {% if exp.baseline_compressed_size %}
+        <div class="info-row"><span>Baseline container size</span>
+          <span class="mono">{{ fmt_bytes(exp.baseline_compressed_size) }} ({{ "%.2f"|format(exp.baseline_ratio) }}x)</span>
+        </div>
+        <div class="info-row"><span>EABPS vs Baseline</span>
+          <span class="mono {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}text-green{% else %}muted{% endif %}">
+            {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}
+              EABPS saves {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} more
+            {% else %}
+              Baseline smaller by {{ fmt_bytes(exp.eabps_compressed_size - exp.baseline_compressed_size) }}
+            {% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Technical details (collapsed by default) -->
     <details class="tech-details">
       <summary>Technical Details</summary>
@@ -175,6 +216,11 @@
           {% if exp.rle_size %}<div class="info-row"><span>RLE candidate size</span><span>{{ fmt_bytes(exp.rle_size) }}</span></div>{% endif %}
           {% if exp.huffman_size %}<div class="info-row"><span>Huffman candidate size</span><span>{{ fmt_bytes(exp.huffman_size) }}</span></div>{% endif %}
           {% if exp.predictor %}<div class="info-row"><span>Predictor</span><span class="mono">{{ exp.predictor }}</span></div>{% endif %}
+          {% if exp.eabps_total_blocks %}
+          <div class="info-row"><span>EABPS encoded payload</span><span>{{ fmt_bytes(exp.eabps_payload_size) }}</span></div>
+          <div class="info-row"><span>EABPS metadata overhead</span><span>{{ fmt_bytes(exp.eabps_metadata_size) }}</span></div>
+          <div class="info-row"><span>EABPS container overhead</span><span>{{ fmt_bytes(exp.eabps_overhead) }}</span></div>
+          {% endif %}
           <div class="info-row"><span>Shannon entropy (raw)</span><span class="mono">{{ "%.4f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
           <div class="info-row"><span>Residual entropy</span><span class="mono">{{ "%.4f"|format(exp.residual_entropy or 0) }} bits/byte</span></div>
         </div>

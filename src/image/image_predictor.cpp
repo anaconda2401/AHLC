@@ -16,6 +16,7 @@
  */
 
 #include "image_predictor.hpp"
+#include "eabps.hpp"
 #include "../rle/rle_encoder.hpp"
 #include "../rle/rle_decoder.hpp"
 #include "../entropy/huffman.hpp"
@@ -191,6 +192,10 @@ bool decompress_image(const std::string& ahmc_path, const std::string& bmp_path)
 
     uint8_t version = 0;
     in.read(reinterpret_cast<char*>(&version), 1);
+    if (version == AHMC_VERSION_EABPS) {
+        in.close();
+        return decompress_image_eabps(ahmc_path, bmp_path);
+    }
     if (version < 1 || version > 2) {
         std::cerr << "Image: unsupported version " << (int)version << ".\n"; return false;
     }
