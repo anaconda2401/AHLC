@@ -91,6 +91,8 @@ def init_db():
             ("eabps_verified", "INTEGER DEFAULT 0"),
             ("eabps_delta1_count", "INTEGER DEFAULT 0"),
             ("eabps_delta2_count", "INTEGER DEFAULT 0"),
+            ("teabps_d1_count", "INTEGER DEFAULT 0"),
+            ("teabps_d2_count", "INTEGER DEFAULT 0"),
             ("baseline_compressed_size", "INTEGER DEFAULT 0"),
             ("baseline_ratio", "REAL DEFAULT 0"),
         ]:
@@ -122,8 +124,9 @@ def save_experiment(session_id: str, filename: str, data: dict,
             eabps_rle_count, eabps_huffman_count, eabps_raw_count,
             eabps_payload_size, eabps_metadata_size, eabps_overhead,
             eabps_verified, baseline_compressed_size, baseline_ratio,
+            eabps_delta1_count, eabps_delta2_count, teabps_d1_count, teabps_d2_count,
             original_path, compressed_path, recovered_path
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             session_id, filename, media,
             data.get("original_size"), data.get("compressed_size"),
@@ -160,6 +163,10 @@ def save_experiment(session_id: str, filename: str, data: dict,
             1 if data.get("eabps_verified") else 0,
             data.get("baseline_compressed_size", 0),
             data.get("baseline_ratio", 0.0),
+            data.get("eabps_delta1_count", data.get("teabps_d1_count", 0)),
+            data.get("eabps_delta2_count", data.get("teabps_d2_count", 0)),
+            data.get("teabps_d1_count", data.get("eabps_delta1_count", 0)),
+            data.get("teabps_d2_count", data.get("eabps_delta2_count", 0)),
             original_path, compressed_path, recovered_path,
         ))
         return cur.lastrowid

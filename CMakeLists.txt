@@ -37,6 +37,7 @@ add_executable(ahmc
     src/audio/audio_eabps.cpp
     src/entropy/huffman.cpp
     src/media/format_detector.cpp
+    src/video/video_teabps.cpp
 )
 
 target_include_directories(ahmc PRIVATE

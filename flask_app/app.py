@@ -247,6 +247,8 @@ def download_ahmc(exp_id):
     base_p = Path(p_str)
     candidates = [
         base_p.with_suffix(".ahmc"),
+        base_p.parent / f"{base_p.stem}_teabps.ahmc",
+        base_p.parent / f"{base_p.stem.replace('_compressed', '')}_teabps.ahmc",
         base_p.parent / f"{base_p.stem}_eabps.ahmc",
         base_p.parent / f"{base_p.stem.replace('_compressed', '')}_eabps.ahmc",
         base_p.parent / f"{base_p.stem}_internal.ahmc",

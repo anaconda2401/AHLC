@@ -252,23 +252,37 @@
   </section>
 
   {% if exp.eabps_total_blocks and exp.eabps_total_blocks > 0 %}
-  <!-- 07. EABPS Block-Wise Evaluation -->
+  <!-- 07. EABPS/TEABPS Block-Wise Evaluation -->
   <section class="report-section">
     <div class="report-section-num">07</div>
     <div class="report-section-body">
-      <h2>EABPS (Entropy-Aware Block-wise Predictor Selection) Evaluation</h2>
+      <h2>{% if is_vid %}TEABPS (Temporal Entropy-Aware Block-wise Predictor Selection) Evaluation{% else %}EABPS (Entropy-Aware Block-wise Predictor Selection) Evaluation{% endif %}</h2>
       <p class="report-note" style="margin-bottom:14px">
-        EABPS partitions the {% if is_audio %}audio sample stream into independent {{ exp.eabps_block_size }} sample frame blocks{% else %}image into independent {{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixel blocks{% endif %},
-        evaluates candidate predictors ({% if is_audio %}NONE, DELTA-1, DELTA-2{% else %}NONE, LEFT, UP{% endif %}) and codecs (RLE, Huffman, RAW) per block, and selects the combination
+        {% if is_vid %}
+        TEABPS partitions decoded video frames into independent {{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixel blocks (16&times;16 luma, 8&times;8 chroma),
+        evaluates candidate temporal predictors (NONE, TEMPORAL-D1, TEMPORAL-D2) and codecs (RLE, Huffman, RAW) per block, and selects the combination
         yielding the lowest total encoded byte cost including per-block metadata and container overhead.
+        {% elif is_audio %}
+        EABPS partitions the audio sample stream into independent {{ exp.eabps_block_size }} sample frame blocks,
+        evaluates candidate predictors (NONE, DELTA-1, DELTA-2) and codecs (RLE, Huffman, RAW) per block, and selects the combination
+        yielding the lowest total encoded byte cost including per-block metadata and container overhead.
+        {% else %}
+        EABPS partitions the image into independent {{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixel blocks,
+        evaluates candidate predictors (NONE, LEFT, UP) and codecs (RLE, Huffman, RAW) per block, and selects the combination
+        yielding the lowest total encoded byte cost including per-block metadata and container overhead.
+        {% endif %}
       </p>
       <div class="info-rows">
-        <div class="info-row"><span>Algorithm version</span><span class="mono">AHMC v3 (EABPS Container)</span></div>
-        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} {% if is_audio %}sample frames{% else %}&times; {{ exp.eabps_block_size }} pixels{% endif %}</span></div>
+        <div class="info-row"><span>Algorithm version</span><span class="mono">{% if is_vid %}AHLV v3 (TEABPS Container){% else %}AHMC v3 (EABPS Container){% endif %}</span></div>
+        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} {% if is_vid %}× {{ exp.eabps_block_size }} px (16×16 luma / 8×8 chroma){% elif is_audio %}sample frames{% else %}&times; {{ exp.eabps_block_size }} pixels{% endif %}</span></div>
         <div class="info-row"><span>Total blocks</span><span class="mono">{{ exp.eabps_total_blocks }} blocks</span></div>
         <div class="info-row"><span>Predictor distribution</span>
           <span class="mono">
-            {% if is_audio %}
+            {% if is_vid %}
+            NONE: {{ exp.eabps_none_count }} ({{ "%.1f"|format(100.0 * exp.eabps_none_count / exp.eabps_total_blocks) }}%) &bull;
+            TEMPORAL-D1: {{ exp.teabps_d1_count or exp.eabps_delta1_count or exp.eabps_left_count }} ({{ "%.1f"|format(100.0 * (exp.teabps_d1_count or exp.eabps_delta1_count or exp.eabps_left_count) / exp.eabps_total_blocks) }}%) &bull;
+            TEMPORAL-D2: {{ exp.teabps_d2_count or exp.eabps_delta2_count or exp.eabps_up_count }} ({{ "%.1f"|format(100.0 * (exp.teabps_d2_count or exp.eabps_delta2_count or exp.eabps_up_count) / exp.eabps_total_blocks) }}%)
+            {% elif is_audio %}
             NONE: {{ exp.eabps_none_count }} ({{ "%.1f"|format(100.0 * exp.eabps_none_count / exp.eabps_total_blocks) }}%) &bull;
             DELTA-1: {{ exp.eabps_delta1_count or exp.eabps_left_count }} ({{ "%.1f"|format(100.0 * (exp.eabps_delta1_count or exp.eabps_left_count) / exp.eabps_total_blocks) }}%) &bull;
             DELTA-2: {{ exp.eabps_delta2_count or exp.eabps_up_count }} ({{ "%.1f"|format(100.0 * (exp.eabps_delta2_count or exp.eabps_up_count) / exp.eabps_total_blocks) }}%)
@@ -287,26 +301,26 @@
         <div class="info-row"><span>Encoded block payload size</span><span class="mono">{{ fmt_bytes(exp.eabps_payload_size) }} ({{ exp.eabps_payload_size }} bytes)</span></div>
         <div class="info-row"><span>Predictor metadata size</span><span class="mono">{{ fmt_bytes(exp.eabps_metadata_size) }} (6 bytes/block overhead)</span></div>
         <div class="info-row"><span>Total container overhead</span><span class="mono">{{ fmt_bytes(exp.eabps_overhead) }} bytes</span></div>
-        <div class="info-row"><span><strong>EABPS AHMC container size</strong></span>
+        <div class="info-row"><span><strong>{% if is_vid %}TEABPS AHLV container size{% else %}EABPS AHMC container size{% endif %}</strong></span>
           <span class="mono"><strong>{{ fmt_bytes(exp.eabps_compressed_size) }}</strong> &nbsp;({{ exp.eabps_compressed_size }} bytes &bull; {{ "%.2f"|format(exp.eabps_ratio) }}x)</span>
         </div>
         {% if exp.baseline_compressed_size %}
-        <div class="info-row"><span>Baseline AHMC container size</span>
+        <div class="info-row"><span>{% if is_vid %}Decoded frame stream size{% else %}Baseline AHMC container size{% endif %}</span>
           <span class="mono">{{ fmt_bytes(exp.baseline_compressed_size) }} &nbsp;({{ "%.2f"|format(exp.baseline_ratio) }}x)</span>
         </div>
-        <div class="info-row"><span>EABPS vs Baseline comparison</span>
+        <div class="info-row"><span>{% if is_vid %}TEABPS vs Raw Frame comparison{% else %}EABPS vs Baseline comparison{% endif %}</span>
           <span class="mono {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}text-green{% else %}muted{% endif %}">
             {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}
-              EABPS improves compression by {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} over baseline
+              {% if is_vid %}TEABPS compresses {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} from raw frames{% else %}EABPS improves compression by {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} over baseline{% endif %}
             {% else %}
-              Baseline AHMC smaller by {{ fmt_bytes(exp.eabps_compressed_size - exp.baseline_compressed_size) }}
+              Expansion by {{ fmt_bytes(exp.eabps_compressed_size - exp.baseline_compressed_size) }}
             {% endif %}
           </span>
         </div>
         {% endif %}
         <div class="info-row"><span>Lossless verification</span>
           <span class="{% if exp.eabps_verified or exp.verification %}verify-pass{% else %}verify-fail{% endif %}">
-            {% if exp.eabps_verified or exp.verification %}&check; PASS &mdash; Exact 100% {% if is_audio %}sample{% else %}pixel{% endif %} match{% else %}&cross; FAIL{% endif %}
+            {% if exp.eabps_verified or exp.verification %}&check; PASS &mdash; Exact 100% {% if is_vid %}decoded frame{% elif is_audio %}sample{% else %}pixel{% endif %} match{% else %}&cross; FAIL{% endif %}
           </span>
         </div>
       </div>

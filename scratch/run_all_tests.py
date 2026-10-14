@@ -38,8 +38,11 @@ def main():
         ("huffman-test", "C++ Huffman Coding Test"),
         ("image-test", "C++ Image Round-Trip Test"),
         ("image-adaptive-test", "C++ Adaptive Image Test"),
+        ("image-eabps-test", "C++ Image EABPS Suite"),
         ("audio-test", "C++ Audio Round-Trip Test"),
         ("audio-adaptive-test", "C++ Adaptive Audio Test"),
+        ("audio-eabps-test", "C++ Audio EABPS Suite"),
+        ("video-teabps-test", "C++ Video TEABPS Suite"),
         ("ffmpeg-test", "C++ FFmpeg Integration Test"),
         ("format-test", "C++ Format Abstraction Test"),
     ]
@@ -69,6 +72,12 @@ def main():
     print("\n--- Phase 4: Python Video Tests (AVI & MP4 - 10 Requirements) ---")
     ok_vid = run_cmd([PYTHON_EXE, str(PROJECT_ROOT / "scratch" / "test_video_suite.py")], "Video Test Suite (AVI & MP4)")
     if not ok_vid:
+        all_passed = False
+
+    # 5. Python Video TEABPS Test Suite
+    print("\n--- Phase 5: Python Video TEABPS Test Suite ---")
+    ok_teabps = run_cmd([PYTHON_EXE, str(PROJECT_ROOT / "scratch" / "test_video_teabps_full.py")], "Video TEABPS Full Verification Suite")
+    if not ok_teabps:
         all_passed = False
 
     print("\n======================================================================")

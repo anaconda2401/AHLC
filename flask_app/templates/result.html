@@ -168,16 +168,18 @@
     {% if exp.eabps_total_blocks and exp.eabps_total_blocks > 0 %}
     <div class="info-card" style="border:1px solid rgba(46,184,138,0.25)">
       <div class="info-card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>EABPS Block Compression</span>
-        <span class="badge" style="background:rgba(46,184,138,0.15);color:var(--accent);font-size:0.75rem">AHMC v3</span>
+        <span>{% if is_video %}TEABPS Video Block Compression{% else %}EABPS Block Compression{% endif %}</span>
+        <span class="badge" style="background:rgba(46,184,138,0.15);color:var(--accent);font-size:0.75rem">{% if is_video %}AHLV v3{% else %}AHMC v3{% endif %}</span>
       </div>
       <div class="info-rows">
-        <div class="info-row"><span>Algorithm</span><span class="mono">EABPS (Entropy-Aware Block Selection)</span></div>
-        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} {% if is_audio %}sample frames{% else %}× {{ exp.eabps_block_size }} px{% endif %}</span></div>
+        <div class="info-row"><span>Algorithm</span><span class="mono">{% if is_video %}TEABPS (Temporal Entropy-Aware Block Selection){% else %}EABPS (Entropy-Aware Block Selection){% endif %}</span></div>
+        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} {% if is_video %}× {{ exp.eabps_block_size }} px (16×16 luma / 8×8 chroma){% elif is_audio %}sample frames{% else %}× {{ exp.eabps_block_size }} px{% endif %}</span></div>
         <div class="info-row"><span>Block count</span><span class="mono">{{ exp.eabps_total_blocks }} blocks</span></div>
         <div class="info-row"><span>Predictors chosen</span>
           <span class="mono">
-            {% if is_audio %}
+            {% if is_video %}
+            NONE: {{ exp.eabps_none_count }} · TEMPORAL-D1: {{ exp.teabps_d1_count or exp.eabps_delta1_count or exp.eabps_left_count }} · TEMPORAL-D2: {{ exp.teabps_d2_count or exp.eabps_delta2_count or exp.eabps_up_count }}
+            {% elif is_audio %}
             NONE: {{ exp.eabps_none_count }} · DELTA-1: {{ exp.eabps_delta1_count or exp.eabps_left_count }} · DELTA-2: {{ exp.eabps_delta2_count or exp.eabps_up_count }}
             {% else %}
             NONE: {{ exp.eabps_none_count }} · LEFT: {{ exp.eabps_left_count }} · UP: {{ exp.eabps_up_count }}
@@ -189,19 +191,19 @@
             RLE: {{ exp.eabps_rle_count }} · Huffman: {{ exp.eabps_huffman_count }} · RAW: {{ exp.eabps_raw_count }}
           </span>
         </div>
-        <div class="info-row"><span>EABPS container size</span>
+        <div class="info-row"><span>{% if is_video %}TEABPS container size{% else %}EABPS container size{% endif %}</span>
           <span class="mono font-semibold">{{ fmt_bytes(exp.eabps_compressed_size) }} ({{ "%.2f"|format(exp.eabps_ratio) }}x)</span>
         </div>
         {% if exp.baseline_compressed_size %}
-        <div class="info-row"><span>Baseline container size</span>
+        <div class="info-row"><span>{% if is_video %}Decoded frame stream size{% else %}Baseline container size{% endif %}</span>
           <span class="mono">{{ fmt_bytes(exp.baseline_compressed_size) }} ({{ "%.2f"|format(exp.baseline_ratio) }}x)</span>
         </div>
-        <div class="info-row"><span>EABPS vs Baseline</span>
+        <div class="info-row"><span>{% if is_video %}TEABPS vs Raw Frames{% else %}EABPS vs Baseline{% endif %}</span>
           <span class="mono {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}text-green{% else %}muted{% endif %}">
             {% if exp.eabps_compressed_size <= exp.baseline_compressed_size %}
-              EABPS saves {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} more
+              {% if is_video %}TEABPS compresses {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} from raw frames{% else %}EABPS saves {{ fmt_bytes(exp.baseline_compressed_size - exp.eabps_compressed_size) }} more{% endif %}
             {% else %}
-              Baseline smaller by {{ fmt_bytes(exp.eabps_compressed_size - exp.baseline_compressed_size) }}
+              Expansion by {{ fmt_bytes(exp.eabps_compressed_size - exp.baseline_compressed_size) }}
             {% endif %}
           </span>
         </div>

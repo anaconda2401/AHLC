@@ -20,6 +20,7 @@
 #include "audio/audio.hpp"
 #include "audio/audio_predictor.hpp"
 #include "audio/audio_eabps.hpp"
+#include "video/video_teabps.hpp"
 #include "entropy/huffman.hpp"
 #include "media/format_detector.hpp"
 
@@ -498,6 +499,44 @@ static void print_audio_eabps_json(const ahlc::AudioEABPSCompressStats& s, bool 
     std::printf("}\n");
 }
 
+static void print_video_teabps_json(const ahlc::VideoTEABPSCompressStats& s, bool verified)
+{
+    double ratio = (s.compressed_file_size > 0)
+        ? (double)s.original_raw_bytes / s.compressed_file_size : 0.0;
+    double saved = (s.original_raw_bytes > 0)
+        ? (1.0 - (double)s.compressed_file_size / s.original_raw_bytes) * 100.0 : 0.0;
+    std::printf("{\n");
+    std::printf("  \"ok\": true,\n");
+    std::printf("  \"algorithm\": \"TEABPS Video\",\n");
+    std::printf("  \"media_type\": \"video\",\n");
+    std::printf("  \"width\": %u,\n", s.width);
+    std::printf("  \"height\": %u,\n", s.height);
+    std::printf("  \"fps\": %.3f,\n", s.fps);
+    std::printf("  \"frame_count\": %u,\n", s.frame_count);
+    std::printf("  \"block_size\": %u,\n", (unsigned)s.block_size);
+    std::printf("  \"total_blocks\": %u,\n", s.total_blocks);
+    std::printf("  \"original_size\": %llu,\n", (unsigned long long)s.original_file_size);
+    std::printf("  \"original_raw_bytes\": %llu,\n", (unsigned long long)s.original_raw_bytes);
+    std::printf("  \"compressed_size\": %llu,\n", (unsigned long long)s.compressed_file_size);
+    std::printf("  \"encoded_payload_size\": %llu,\n", (unsigned long long)s.encoded_payload_size);
+    std::printf("  \"predictor_metadata_size\": %llu,\n", (unsigned long long)s.predictor_metadata_size);
+    std::printf("  \"container_overhead\": %llu,\n", (unsigned long long)s.container_overhead);
+    std::printf("  \"compression_ratio\": %.6f,\n", ratio);
+    std::printf("  \"space_saved_percent\": %.4f,\n", saved);
+    std::printf("  \"predictor\": \"teabps_video\",\n");
+    std::printf("  \"count_none\": %u,\n", s.count_none);
+    std::printf("  \"count_d1\": %u,\n", s.count_d1);
+    std::printf("  \"count_d2\": %u,\n", s.count_d2);
+    std::printf("  \"count_rle\": %u,\n", s.count_rle);
+    std::printf("  \"count_huffman\": %u,\n", s.count_huffman);
+    std::printf("  \"count_raw\": %u,\n", s.count_raw);
+    std::printf("  \"original_entropy\": %.6f,\n", s.entropy_before);
+    std::printf("  \"residual_entropy\": %.6f,\n", s.entropy_after);
+    std::printf("  \"compression_time_ms\": %.3f,\n", s.compression_time_ms);
+    std::printf("  \"verification\": %s\n", verified ? "true" : "false");
+    std::printf("}\n");
+}
+
 // ================================================================
 // Usage
 // ================================================================
@@ -533,6 +572,10 @@ static void print_usage()
         <<"  ahmc audio-eabps-decompress <in.ahmc> <out.wav> EABPS audio decompress\n"
         <<"  ahmc audio-eabps-test                        Run EABPS audio test suite\n"
         <<"  ahmc audio-eabps-benchmark                   Run EABPS audio benchmark against baseline\n"
+        <<"  ahmc video-teabps-compress <in> <out.ahmc> [--block-size N] [--max-frames N] [--json] TEABPS video compress\n"
+        <<"  ahmc video-teabps-decompress <in.ahmc> <out.yuv> TEABPS video decompress\n"
+        <<"  ahmc video-teabps-test                       Run TEABPS video test suite\n"
+        <<"  ahmc video-teabps-benchmark                  Run TEABPS video benchmark against baseline\n"
         <<"  ahmc huffman-compress <in> <out>             Huffman compress\n"
         <<"  ahmc huffman-decompress <in> <out>           Huffman decompress\n"
         <<"  ahmc huffman-verify <orig> <rec>             Verify Huffman\n"
@@ -797,6 +840,52 @@ int main(int argc, char* argv[])
     }
     if (cmd == "audio-eabps-test")      return ahlc::run_audio_eabps_test_suite() ? 0 : 1;
     if (cmd == "audio-eabps-benchmark") return ahlc::run_audio_eabps_benchmark()  ? 0 : 1;
+
+    // ---- Video TEABPS ----
+    if (cmd == "video-teabps-compress") {
+        if (argc < 4) { std::cerr << "Error: needs <in> <out.ahmc> [--block-size N] [--max-frames N] [--json].\n"; return 1; }
+        bool jm = has_flag(argc, argv, "--json");
+        std::string bs_str = get_option_val(argc, argv, "--block-size", "16");
+        uint16_t bsize = static_cast<uint16_t>(std::clamp(std::atoi(bs_str.c_str()), 4, 256));
+        std::string mf_str = get_option_val(argc, argv, "--max-frames", "0");
+        uint32_t max_fr = static_cast<uint32_t>(std::atoi(mf_str.c_str()));
+
+        ahlc::VideoTEABPSCompressStats s;
+        if (!ahlc::compress_video_file_teabps(argv[2], argv[3], s, bsize, max_fr)) {
+            if (jm) std::cout << "{\"ok\":false,\"error\":\"Video TEABPS compression failed\"}\n";
+            return 1;
+        }
+        if (jm) {
+            ahlc::RawYUVSequence orig, rec;
+            bool verified = false;
+            if (ahlc::decompress_video_teabps(argv[3], rec)) {
+                if (ahlc::decode_video_to_yuv_sequence(argv[2], orig, max_fr))
+                    verified = ahlc::yuv_sequences_equal(orig, rec);
+            }
+            print_video_teabps_json(s, verified);
+        } else {
+            ahlc::print_video_teabps_stats(argv[2], argv[3], s);
+            ahlc::RawYUVSequence orig, rec;
+            if (ahlc::decompress_video_teabps(argv[3], rec)) {
+                if (ahlc::decode_video_to_yuv_sequence(argv[2], orig, max_fr)) {
+                    bool ok = ahlc::yuv_sequences_equal(orig, rec);
+                    std::cout << " Lossless frame verification: " << (ok ? "PASS" : "FAIL") << "\n";
+                    std::cout << "--------------------------------------------\n";
+                }
+            }
+        }
+        return 0;
+    }
+    if (cmd == "video-teabps-decompress") {
+        if (argc < 4) { std::cerr << "Error: needs <in.ahmc> <out.yuv>.\n"; return 1; }
+        ahlc::RawYUVSequence seq;
+        if (!ahlc::decompress_video_teabps(argv[2], seq)) return 1;
+        if (!ahlc::write_yuv_sequence(argv[3], seq)) return 1;
+        std::cout << "Done: " << argv[3] << " (" << seq.frame_count << " frames " << seq.width << "x" << seq.height << ")\n";
+        return 0;
+    }
+    if (cmd == "video-teabps-test")      return ahlc::run_video_teabps_test_suite() ? 0 : 1;
+    if (cmd == "video-teabps-benchmark") return ahlc::run_video_teabps_benchmark()  ? 0 : 1;
 
     // ---- Huffman ----
     if(cmd=="huffman-compress"){if(argc<4){std::cerr<<"Error: needs <in> <out>.\n";return 1;}ahlc::HuffStats s;if(!ahlc::huffman_compress(argv[2],argv[3],s))return 1;ahlc::print_huff_stats(s);return 0;}
