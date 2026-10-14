@@ -95,6 +95,9 @@ def init_db():
             ("teabps_d2_count", "INTEGER DEFAULT 0"),
             ("baseline_compressed_size", "INTEGER DEFAULT 0"),
             ("baseline_ratio", "REAL DEFAULT 0"),
+            ("playback_path", "TEXT"),
+            ("playback_size", "INTEGER DEFAULT 0"),
+            ("lossless_path", "TEXT"),
         ]:
             if col not in cols:
                 con.execute(f"ALTER TABLE experiments ADD COLUMN {col} {col_type}")
@@ -105,6 +108,9 @@ def save_experiment(session_id: str, filename: str, data: dict,
                     recovered_path: str) -> int:
     """Insert a new experiment row and return its id."""
     media = data.get("media_type", "unknown")
+    playback_p = data.get("playback_path", compressed_path)
+    playback_sz = data.get("playback_size", data.get("compressed_size", 0))
+    lossless_p = data.get("lossless_path", compressed_path)
     with _conn() as con:
         cur = con.execute("""
         INSERT INTO experiments (
@@ -125,8 +131,9 @@ def save_experiment(session_id: str, filename: str, data: dict,
             eabps_payload_size, eabps_metadata_size, eabps_overhead,
             eabps_verified, baseline_compressed_size, baseline_ratio,
             eabps_delta1_count, eabps_delta2_count, teabps_d1_count, teabps_d2_count,
-            original_path, compressed_path, recovered_path
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            original_path, compressed_path, recovered_path,
+            playback_path, playback_size, lossless_path
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             session_id, filename, media,
             data.get("original_size"), data.get("compressed_size"),
@@ -168,6 +175,7 @@ def save_experiment(session_id: str, filename: str, data: dict,
             data.get("teabps_d1_count", data.get("eabps_delta1_count", 0)),
             data.get("teabps_d2_count", data.get("eabps_delta2_count", 0)),
             original_path, compressed_path, recovered_path,
+            playback_p, playback_sz, lossless_p,
         ))
         return cur.lastrowid
 

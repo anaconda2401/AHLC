@@ -80,6 +80,12 @@ def main():
     if not ok_teabps:
         all_passed = False
 
+    # 6. Python Video Playback, FFV1 Integrity & Download Suite
+    print("\n--- Phase 6: Python Video Playback, FFV1 Integrity & Download Suite ---")
+    ok_pb = run_cmd([PYTHON_EXE, str(PROJECT_ROOT / "scratch" / "test_video_playback_pipeline.py")], "Video Playback & Download Verification Suite")
+    if not ok_pb:
+        all_passed = False
+
     print("\n======================================================================")
     if all_passed:
         print("   ALL TESTS PASSED! FULL SYSTEM COMPLIANT & VERIFIED.")

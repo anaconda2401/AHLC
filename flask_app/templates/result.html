@@ -30,10 +30,21 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       {% if is_video %}.AHLV Container{% else %}.AHMC Container{% endif %}
     </a>
+    {% if is_video %}
+    <a href="{{ url_for('download_lossless', exp_id=exp.id) }}" class="btn btn-ghost" title="Lossless master archive (bit-identical decoded frames). Note: encoded with {{ (exp.selected_codec or 'FFV1')|upper }}. Requires VLC, MPV, or player with FFV1 codec support.">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Lossless Master ({{ ext }})
+    </a>
+    <a href="{{ url_for('download_playback', exp_id=exp.id) }}" class="btn btn-primary" title="Universal playback video (H.264 MP4). Opens and plays directly in Windows Media Player, QuickTime, browsers, and mobile.">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Playable Video (.mp4)
+    </a>
+    {% else %}
     <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download {{ ext }} File
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -64,6 +75,23 @@
       {% endif %}
     </span>
   </div>
+
+  {% if is_video and (exp.selected_codec == 'ffv1' or ext == 'AVI') %}
+  <div style="margin-top:12px;padding:12px 16px;border-radius:8px;background:rgba(227,179,65,0.08);border:1px solid rgba(227,179,65,0.3);line-height:1.5">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#e3b341;margin-bottom:4px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Playback &amp; Player Compatibility Notice
+    </div>
+    <div style="font-size:0.875rem;color:var(--text-muted, #8b949e)">
+      The lossless master file is encoded with <strong>FFV1</strong> (RFC 9043 archival codec) guaranteeing 100% bit-exact frame reconstruction. Standard Windows Media Player does not include an FFV1 decoder by default and displays a format error.
+      <div style="margin-top:6px">
+        &bull; <strong>For Windows Media Player, browsers, and mobile:</strong> Click <strong>Playable Video (.mp4)</strong> above.<br>
+        &bull; <strong>For the bit-identical lossless master:</strong> Open the <strong>Lossless Master (.avi)</strong> in <strong>VLC Media Player</strong> or <strong>MPV</strong>.<br>
+        &bull; <strong>For the research compression artifact:</strong> Download the <strong>.AHLV Container</strong>.
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="result-summary-grid">
     <div class="result-metric">

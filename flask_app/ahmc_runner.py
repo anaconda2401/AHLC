@@ -1419,6 +1419,25 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
         selected_codec = "original"
         is_fallback = True
         fallback_reason = "No size reduction"
+    # 2. Generate Universal Playback Video (H.264 MP4 with faststart for standard players)
+    playback_mp4 = output_path.parent / (output_path.stem + "_playback.mp4")
+    p_args = [
+        "-y",
+        "-i", str(final_avi),
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-preset", "fast",
+        "-crf", "18",
+        "-movflags", "+faststart",
+    ]
+    if has_audio:
+        p_args.extend(["-c:a", "aac", "-b:a", "192k"])
+    else:
+        p_args.append("-an")
+    p_args.append(str(playback_mp4))
+
+    p_res = run_ffmpeg(p_args)
+    playback_size = playback_mp4.stat().st_size if (playback_mp4.exists() and p_res.success) else 0
 
     comp_ms = (time.perf_counter() - t0) * 1000
 
@@ -1439,6 +1458,11 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
         "decompression_time_ms": t_data.get("decompression_time_ms", 0.0),
         "compressed_path": str(final_avi),
         "recovered_path": str(final_avi),
+        "playback_path": str(playback_mp4) if playback_size > 0 else str(final_avi),
+        "playback_size": playback_size,
+        "lossless_path": str(final_avi),
+        "lossless_size": actual_output_size,
+        "has_playback_mp4": (playback_size > 0),
         "predictor": "teabps_video" if teabps_ahmc_sz > 0 else metrics.get("predictor", "spatial + inter-frame delta"),
         "selected_codec": selected_codec,
         "candidate_codec": candidate_codec,
@@ -1567,6 +1591,11 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
             "decompression_time_ms": t_data.get("decompression_time_ms", 0.0),
             "compressed_path": str(final_mp4),
             "recovered_path": str(final_mp4),
+            "playback_path": str(final_mp4),
+            "playback_size": orig_size,
+            "lossless_path": str(final_mp4),
+            "lossless_size": orig_size,
+            "has_playback_mp4": True,
             "predictor": "teabps_video" if teabps_ahmc_sz > 0 else metrics.get("predictor", "spatial + inter-frame delta"),
             "selected_codec": "original",
             "candidate_codec": candidate_codec,
@@ -1694,6 +1723,11 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
         "decompression_time_ms": t_data.get("decompression_time_ms", 0.0),
         "compressed_path": str(final_mp4),
         "recovered_path": str(final_mp4),
+        "playback_path": str(final_mp4),
+        "playback_size": actual_output_size,
+        "lossless_path": str(final_mp4),
+        "lossless_size": actual_output_size,
+        "has_playback_mp4": True,
         "predictor": "teabps_video" if teabps_ahmc_sz > 0 else metrics.get("predictor", "spatial + inter-frame delta"),
         "selected_codec": selected_codec,
         "candidate_codec": candidate_codec,

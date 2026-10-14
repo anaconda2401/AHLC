@@ -236,6 +236,89 @@ def download_image(exp_id):
     )
 
 
+# ================================================================
+# Download Playable Video (H.264 MP4 for universal player compatibility)
+# ================================================================
+@app.route("/download/<int:exp_id>/playback")
+@app.route("/download/<int:exp_id>/mp4")
+def download_playback(exp_id):
+    exp = db.get_experiment(exp_id)
+    if not exp:
+        abort(404)
+    orig_name = exp["filename"]
+    orig_stem = Path(orig_name).stem
+
+    # 1. Check explicit playback_path
+    p_str = exp.get("playback_path")
+    p = Path(p_str) if p_str else None
+
+    # 2. Check candidate path on disk
+    if not p or not p.exists():
+        base_p = Path(exp.get("compressed_path") or exp.get("recovered_path") or "")
+        candidate_pb = base_p.parent / f"{base_p.stem}_playback.mp4"
+        if candidate_pb.exists():
+            p = candidate_pb
+        elif base_p.suffix.lower() == ".mp4" and base_p.exists():
+            p = base_p
+        elif base_p.exists():
+            # Generate playback MP4 on-the-fly if needed
+            p_res = runner.run_ffmpeg([
+                "-y", "-i", str(base_p),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-preset", "fast", "-crf", "18", "-movflags", "+faststart",
+                "-an", str(candidate_pb)
+            ])
+            if candidate_pb.exists() and p_res.success:
+                p = candidate_pb
+            else:
+                p = base_p
+
+    if not p or not p.exists():
+        abort(404)
+
+    is_mp4 = (p.suffix.lower() == ".mp4")
+    out_name = f"{orig_stem}_playback.mp4" if is_mp4 else orig_name
+    mimetype = "video/mp4" if is_mp4 else "video/x-msvideo"
+    return send_file(
+        str(p),
+        as_attachment=True,
+        download_name=out_name,
+        mimetype=mimetype,
+    )
+
+
+# ================================================================
+# Download Lossless Master (FFV1 AVI or exact raw/master file)
+# ================================================================
+@app.route("/download/<int:exp_id>/lossless")
+@app.route("/download/<int:exp_id>/master")
+def download_lossless(exp_id):
+    exp = db.get_experiment(exp_id)
+    if not exp:
+        abort(404)
+    p_str = exp.get("lossless_path") or exp.get("compressed_path") or exp.get("recovered_path")
+    if not p_str or not Path(p_str).exists():
+        abort(404)
+    p = Path(p_str)
+    orig_name = exp["filename"]
+    ext = orig_name.rsplit(".", 1)[-1].lower() if "." in orig_name else ""
+    mime_map = {
+        "bmp": "image/bmp",
+        "png": "image/png",
+        "wav": "audio/wav",
+        "flac": "audio/flac",
+        "avi": "video/x-msvideo",
+        "mp4": "video/mp4",
+    }
+    mimetype = mime_map.get(ext, "application/octet-stream")
+    return send_file(
+        str(p),
+        as_attachment=True,
+        download_name=orig_name,
+        mimetype=mimetype,
+    )
+
+
 @app.route("/download/<int:exp_id>/ahmc")
 @app.route("/download/<int:exp_id>/ahlv")
 def download_ahmc(exp_id):

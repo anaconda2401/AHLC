@@ -14,10 +14,21 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       {% if is_vid_hdr %}.AHLV Container{% else %}.AHMC Container{% endif %}
     </a>
+    {% if is_vid_hdr %}
+    <a href="{{ url_for('download_lossless', exp_id=exp.id) }}" class="btn btn-ghost" title="Lossless master archive (bit-identical decoded frames). Note: encoded with {{ (exp.selected_codec or 'FFV1')|upper }}. Requires VLC, MPV, or player with FFV1 codec support.">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Lossless Master ({{ exp.filename.split('.')[-1]|upper }})
+    </a>
+    <a href="{{ url_for('download_playback', exp_id=exp.id) }}" class="btn btn-primary" title="Universal playback video (H.264 MP4). Opens and plays directly in Windows Media Player, QuickTime, browsers, and mobile.">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Playable Video (.mp4)
+    </a>
+    {% else %}
     <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download {{ exp.filename.split('.')[-1]|upper }} File
     </a>
+    {% endif %}
   </div>
 </div>
 
@@ -227,6 +238,12 @@
         <div class="info-row"><span><strong>Final Output file size</strong><br><small class="muted">payload + container</small></span>
           <span class="mono"><strong>{{ fmt_bytes(exp.compressed_size) }} ({{ exp.compressed_size }} bytes)</strong></span></div>
       </div>
+      {% if is_vid and (exp.selected_codec == 'ffv1' or ext_lower == 'avi') %}
+      <p class="report-note" style="border-left-color:var(--yellow);margin-top:14px">
+        <strong>Player Compatibility Note:</strong> The lossless master output is encoded using <strong>FFV1</strong> (an open lossless archival format providing 100% bit-exact frame reconstruction). Standard Windows Media Player does not ship with an FFV1 decoder by default and displays a format error.
+        For Windows Media Player, mobile, and web browsers, download the <strong>Playable Video (.mp4)</strong> export. To play the bit-identical <strong>Lossless Master (.avi)</strong>, open it in <strong>VLC Media Player</strong>, <strong>MPV</strong>, or install an FFV1 DirectShow/MediaFoundation codec pack.
+      </p>
+      {% endif %}
       <!-- Pipeline diagram -->
       <div class="pipeline">
         <div class="pipeline-node">Input<br><small>{{ exp.media_type|upper }} &bull; {{ fmt_bytes(exp.original_size) }}</small></div>
