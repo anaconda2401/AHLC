@@ -106,11 +106,31 @@ __*.avi
 __*.mp4
 __*.flac
 __*.png
+__*.ahlv
+*.ahlv
+*.yuv
+*.raw
+*.rawvideo
+*.huff
 bitio_test_tmp.bin
 format_test_tmp.bmp
 *_tmp_verify.*
 *_tmp_*
 __verify_tmp.*
+__verify_audio_eabps_tmp.wav
+__verify_eabps_tmp.bmp
+test_*.bmp
+test_*.wav
+test_*.avi
+test_*.mp4
+test_*.flac
+test_*.png
+test_*.ahlv
+
+# Audit & experiment reports
+result.md
+result_*.md
+
 
 # Scratch directory (ignore all generated artifacts, keep Python test scripts)
 scratch/*
