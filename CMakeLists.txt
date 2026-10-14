@@ -34,6 +34,7 @@ add_executable(ahmc
     src/image/eabps.cpp
     src/audio/audio.cpp
     src/audio/audio_predictor.cpp
+    src/audio/audio_eabps.cpp
     src/entropy/huffman.cpp
     src/media/format_detector.cpp
 )

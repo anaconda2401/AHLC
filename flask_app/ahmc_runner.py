@@ -789,32 +789,47 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
     t0 = time.perf_counter()
     orig_size = input_path.stat().st_size
 
-    # 1. Run AHLC C++ engine on PCM WAV: delta predictor + adaptive RLE/Huffman -> .ahmc
+    # 1. Run AHLC C++ baseline audio compression on PCM WAV: delta predictor + adaptive RLE/Huffman -> .ahmc
     internal_ahmc = output_path.parent / (output_path.stem + "_internal.ahmc")
     c_res = _run("audio-compress", str(input_path), str(internal_ahmc), "--json")
     c_data = _parse_json(c_res) or {}
 
-    # 2. Decompress from .ahmc back to standard WAV
-    reconstructed_wav = output_path.parent / (output_path.stem + "_decompressed.wav")
-    dec = _run("audio-decompress", str(internal_ahmc), str(reconstructed_wav))
+    # 2. Run AHLC C++ EABPS audio compression on PCM WAV: block-wise predictor selection -> .ahmc
+    eabps_ahmc = output_path.parent / (output_path.stem + "_eabps.ahmc")
+    e_res = _run("audio-eabps-compress", str(input_path), str(eabps_ahmc), "--json")
+    e_data = _parse_json(e_res) or {}
 
-    # 3. Verify sample reconstruction via C++ audio-verify and soundfile
-    c_ver = _run("audio-verify", str(input_path), str(reconstructed_wav))
-    sf_ver = verify_audio_identical(input_path, reconstructed_wav)
-    verified = (c_ver.success and "PASS" in c_ver.stdout) or sf_ver
+    # 3. Decompress baseline and EABPS back to standard WAV
+    reconstructed_base_wav = output_path.parent / (output_path.stem + "_base_decompressed.wav")
+    dec_base = _run("audio-decompress", str(internal_ahmc), str(reconstructed_base_wav))
 
-    # 4. Candidate selection
+    reconstructed_eabps_wav = output_path.parent / (output_path.stem + "_eabps_decompressed.wav")
+    dec_eabps = _run("audio-eabps-decompress", str(eabps_ahmc), str(reconstructed_eabps_wav))
+
+    # 4. Verify sample reconstruction via soundfile and C++ audio-verify
+    base_ver = reconstructed_base_wav.exists() and verify_audio_identical(input_path, reconstructed_base_wav)
+    eabps_ver = reconstructed_eabps_wav.exists() and verify_audio_identical(input_path, reconstructed_eabps_wav)
+
+    # 5. Candidate selection
     candidates = []
-    if reconstructed_wav.exists() and verified:
+    if reconstructed_base_wav.exists() and base_ver:
         candidates.append((
-            reconstructed_wav.stat().st_size,
-            reconstructed_wav,
-            "AHLC Delta Predictor + Adaptive Codec (Reconstructed WAV)"
+            reconstructed_base_wav.stat().st_size,
+            reconstructed_base_wav,
+            "AHLC Baseline (Delta Predictor + Adaptive Codec)",
+            "baseline"
         ))
-    candidates.append((orig_size, input_path, "Original WAV Retained (Minimal Representation)"))
+    if reconstructed_eabps_wav.exists() and eabps_ver:
+        candidates.append((
+            reconstructed_eabps_wav.stat().st_size,
+            reconstructed_eabps_wav,
+            "AHLC EABPS Audio (Entropy-Aware Block-wise Predictor Selection)",
+            "eabps"
+        ))
+    candidates.append((orig_size, input_path, "Original WAV Retained (Minimal Representation)", "original"))
 
     candidates.sort(key=lambda x: x[0])
-    best_size, best_path, best_method = candidates[0]
+    best_size, best_path, best_method, best_kind = candidates[0]
 
     final_wav = output_path.with_suffix(".wav")
     if best_path.resolve() != final_wav.resolve():
@@ -829,8 +844,9 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
     ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
 
     is_fallback = (bytes_saved <= 0)
-    candidate_codec = c_data.get("selected_codec", "adaptive")
-    ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    baseline_ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
+
     if is_fallback:
         bytes_saved = 0
         space_saved = 0.0
@@ -840,10 +856,20 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
         best_method = "Original WAV Retained (No size reduction)"
         container_overhead = 0
     else:
-        selected_codec = candidate_codec
         fallback_reason = ""
-        wp = min(c_data.get("rle_size", 0), c_data.get("huffman_size", 0))
-        container_overhead = max(0, ahmc_sz - wp) if ahmc_sz and wp else 39
+        if best_kind == "eabps":
+            selected_codec = "eabps_audio"
+            container_overhead = e_data.get("container_overhead", 31 + 6 * e_data.get("total_blocks", 0))
+        elif best_kind == "baseline":
+            selected_codec = c_data.get("selected_codec", "adaptive")
+            wp = min(c_data.get("rle_size", 0), c_data.get("huffman_size", 0))
+            container_overhead = max(0, baseline_ahmc_sz - wp) if baseline_ahmc_sz and wp else 39
+        else:
+            selected_codec = best_kind
+            container_overhead = 0
+
+    candidate_codec = "eabps_audio" if (eabps_ahmc_sz > 0 and (baseline_ahmc_sz == 0 or eabps_ahmc_sz <= baseline_ahmc_sz)) else c_data.get("selected_codec", "adaptive")
+    ahmc_sz = eabps_ahmc_sz if (eabps_ahmc_sz > 0 and (baseline_ahmc_sz == 0 or eabps_ahmc_sz <= baseline_ahmc_sz)) else baseline_ahmc_sz
 
     # Audio metadata
     try:
@@ -856,10 +882,14 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
         elif "32" in info.subtype: bps = 32
         elif "8" in info.subtype: bps = 8
     except Exception:
-        channels = c_data.get("channels", 1)
-        sample_rate = c_data.get("sample_rate", 44100)
-        bps = c_data.get("bits_per_sample", 16)
-        duration_sec = c_data.get("duration_seconds", 0.0)
+        channels = e_data.get("channels") or c_data.get("channels", 1)
+        sample_rate = e_data.get("sample_rate") or c_data.get("sample_rate", 44100)
+        bps = e_data.get("bits_per_sample") or c_data.get("bits_per_sample", 16)
+        duration_sec = e_data.get("duration_seconds") or c_data.get("duration_seconds", 0.0)
+
+    eabps_ratio = round(orig_size / eabps_ahmc_sz, 3) if eabps_ahmc_sz > 0 else 1.0
+    eabps_saved = round((orig_size - eabps_ahmc_sz) / orig_size * 100.0, 2) if (orig_size > 0 and eabps_ahmc_sz > 0) else 0.0
+    baseline_ratio = round(orig_size / baseline_ahmc_sz, 3) if baseline_ahmc_sz > 0 else 1.0
 
     return {
         "ok": True,
@@ -875,10 +905,10 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
         "verification": final_verified,
         "verification_label": "Sample-identical verification: PASS" if final_verified else "Verification: FAIL",
         "compression_time_ms": comp_ms,
-        "decompression_time_ms": c_data.get("decompression_time_ms", 0.0),
+        "decompression_time_ms": e_data.get("decompression_time_ms") or c_data.get("decompression_time_ms", 0.0),
         "compressed_path": str(final_wav),
         "recovered_path": str(final_wav),
-        "predictor": c_data.get("predictor", "delta"),
+        "predictor": "eabps_audio" if best_kind == "eabps" else c_data.get("predictor", "delta"),
         "selected_codec": selected_codec,
         "candidate_codec": candidate_codec,
         "is_fallback": is_fallback,
@@ -887,13 +917,33 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
         "ahmc_container_size": ahmc_sz,
         "rle_size": c_data.get("rle_size", 0),
         "huffman_size": c_data.get("huffman_size", 0),
-        "original_entropy": c_data.get("original_entropy", 0.0),
-        "residual_entropy": c_data.get("residual_entropy", 0.0),
+        "original_entropy": e_data.get("original_entropy") or c_data.get("original_entropy", 0.0),
+        "residual_entropy": e_data.get("residual_entropy") or c_data.get("residual_entropy", 0.0),
         "ahlc_ahmc_size": ahmc_sz,
         "channels": channels,
         "sample_rate": sample_rate,
         "bits_per_sample": bps,
         "duration_seconds": duration_sec,
+        # EABPS specific metrics
+        "eabps_compressed_size": eabps_ahmc_sz,
+        "eabps_ratio": eabps_ratio,
+        "eabps_saved_percent": eabps_saved,
+        "eabps_block_size": e_data.get("block_size", 4096),
+        "eabps_total_blocks": e_data.get("total_blocks", 0),
+        "eabps_none_count": e_data.get("count_none", 0),
+        "eabps_delta1_count": e_data.get("count_delta1", 0),
+        "eabps_delta2_count": e_data.get("count_delta2", 0),
+        "eabps_left_count": e_data.get("count_delta1", 0), # for UI compatibility
+        "eabps_up_count": e_data.get("count_delta2", 0),   # for UI compatibility
+        "eabps_rle_count": e_data.get("count_rle", 0),
+        "eabps_huffman_count": e_data.get("count_huffman", 0),
+        "eabps_raw_count": e_data.get("count_raw", 0),
+        "eabps_payload_size": e_data.get("encoded_payload_size", 0),
+        "eabps_metadata_size": e_data.get("predictor_metadata_size", 0),
+        "eabps_overhead": e_data.get("container_overhead", 0),
+        "eabps_verified": bool(e_data.get("verification", False) or eabps_ver),
+        "baseline_compressed_size": baseline_ahmc_sz,
+        "baseline_ratio": baseline_ratio,
     }
 
 
@@ -1535,7 +1585,7 @@ def decompress_audio(ahmc_path: Path, out_wav: Path) -> RunResult:
 
 def run_all_tests() -> dict:
     results = {}
-    for test in ("bitio-test", "rle-test", "huffman-test", "image-test", "image-adaptive-test", "audio-test", "audio-adaptive-test", "ffmpeg-test", "format-test"):
+    for test in ("bitio-test", "rle-test", "huffman-test", "image-test", "image-adaptive-test", "image-eabps-test", "audio-test", "audio-adaptive-test", "audio-eabps-test", "ffmpeg-test", "format-test"):
         r = _run(test, timeout=60)
         results[test] = {"ok": r.success, "output": r.stdout[-500:]}
     return results

@@ -19,6 +19,7 @@
 #include "image/eabps.hpp"
 #include "audio/audio.hpp"
 #include "audio/audio_predictor.hpp"
+#include "audio/audio_eabps.hpp"
 #include "entropy/huffman.hpp"
 #include "media/format_detector.hpp"
 
@@ -456,6 +457,47 @@ static void print_audio_json(const ahlc::AudioCompressStats& s, bool verified)
     std::printf("}\n");
 }
 
+static void print_audio_eabps_json(const ahlc::AudioEABPSCompressStats& s, bool verified)
+{
+    double ratio = (s.compressed_file_size > 0)
+        ? (double)s.original_file_size / s.compressed_file_size : 0.0;
+    double saved = (s.original_file_size > 0)
+        ? (1.0 - (double)s.compressed_file_size / s.original_file_size) * 100.0 : 0.0;
+    double duration = (s.sample_rate > 0)
+        ? (double)s.total_samples / s.sample_rate : 0.0;
+    std::printf("{\n");
+    std::printf("  \"ok\": true,\n");
+    std::printf("  \"algorithm\": \"EABPS Audio\",\n");
+    std::printf("  \"media_type\": \"audio\",\n");
+    std::printf("  \"channels\": %u,\n", (unsigned)s.channels);
+    std::printf("  \"sample_rate\": %u,\n", s.sample_rate);
+    std::printf("  \"bits_per_sample\": %u,\n", (unsigned)s.bits_per_sample);
+    std::printf("  \"total_samples\": %llu,\n", (unsigned long long)s.total_samples);
+    std::printf("  \"duration_seconds\": %.4f,\n", duration);
+    std::printf("  \"block_size\": %u,\n", s.block_size);
+    std::printf("  \"total_blocks\": %u,\n", s.total_blocks);
+    std::printf("  \"original_size\": %llu,\n", (unsigned long long)s.original_file_size);
+    std::printf("  \"compressed_size\": %llu,\n", (unsigned long long)s.compressed_file_size);
+    std::printf("  \"encoded_payload_size\": %llu,\n", (unsigned long long)s.encoded_payload_size);
+    std::printf("  \"predictor_metadata_size\": %llu,\n", (unsigned long long)s.predictor_metadata_size);
+    std::printf("  \"container_overhead\": %llu,\n", (unsigned long long)s.container_overhead);
+    std::printf("  \"compression_ratio\": %.6f,\n", ratio);
+    std::printf("  \"space_saved_percent\": %.4f,\n", saved);
+    std::printf("  \"predictor\": \"eabps_audio\",\n");
+    std::printf("  \"count_none\": %u,\n", s.count_none);
+    std::printf("  \"count_delta1\": %u,\n", s.count_delta1);
+    std::printf("  \"count_delta2\": %u,\n", s.count_delta2);
+    std::printf("  \"count_rle\": %u,\n", s.count_rle);
+    std::printf("  \"count_huffman\": %u,\n", s.count_huffman);
+    std::printf("  \"count_raw\": %u,\n", s.count_raw);
+    std::printf("  \"original_entropy\": %.6f,\n", s.entropy_before);
+    std::printf("  \"residual_entropy\": %.6f,\n", s.entropy_after);
+    std::printf("  \"original_pcm_bytes\": %llu,\n", (unsigned long long)s.original_pcm_bytes);
+    std::printf("  \"compression_time_ms\": %.3f,\n", s.compression_time_ms);
+    std::printf("  \"verification\": %s\n", verified ? "true" : "false");
+    std::printf("}\n");
+}
+
 // ================================================================
 // Usage
 // ================================================================
@@ -487,6 +529,10 @@ static void print_usage()
         <<"  ahmc audio-verify <orig.wav> <rec.wav>       Verify audio\n"
         <<"  ahmc audio-test                              Run audio tests\n"
         <<"  ahmc audio-adaptive-test                     Run adaptive audio tests\n"
+        <<"  ahmc audio-eabps-compress <in.wav> <out.ahmc> [--block-size N] [--json]  EABPS audio compress\n"
+        <<"  ahmc audio-eabps-decompress <in.ahmc> <out.wav> EABPS audio decompress\n"
+        <<"  ahmc audio-eabps-test                        Run EABPS audio test suite\n"
+        <<"  ahmc audio-eabps-benchmark                   Run EABPS audio benchmark against baseline\n"
         <<"  ahmc huffman-compress <in> <out>             Huffman compress\n"
         <<"  ahmc huffman-decompress <in> <out>           Huffman decompress\n"
         <<"  ahmc huffman-verify <orig> <rec>             Verify Huffman\n"
@@ -706,6 +752,51 @@ int main(int argc, char* argv[])
     if(cmd=="audio-verify"){if(argc<4){std::cerr<<"Error: needs <orig.wav> <rec.wav>.\n";return 1;}ahlc::AudioBuffer a,b;if(!ahlc::read_wav(argv[2],a))return 1;if(!ahlc::read_wav(argv[3],b))return 1;bool ok=ahlc::audios_equal(a,b);std::cout<<"Lossless verification: "<<(ok?"PASS":"FAIL")<<"\n";return ok?0:1;}
     if(cmd=="audio-test")         return run_audio_test()         ?0:1;
     if(cmd=="audio-adaptive-test")return run_audio_adaptive_test()?0:1;
+
+    // ---- Audio EABPS ----
+    if (cmd == "audio-eabps-compress") {
+        if (argc < 4) { std::cerr << "Error: needs <in.wav> <out.ahmc> [--block-size N] [--json].\n"; return 1; }
+        bool jm = has_flag(argc, argv, "--json");
+        std::string bs_str = get_option_val(argc, argv, "--block-size", "4096");
+        uint32_t bsize = static_cast<uint32_t>(std::clamp(std::atoi(bs_str.c_str()), 16, 1048576));
+        ahlc::AudioEABPSCompressStats s;
+        if (!ahlc::compress_audio_eabps(argv[2], argv[3], s, bsize)) {
+            if (jm) std::cout << "{\"ok\":false,\"error\":\"Audio EABPS compression failed\"}\n";
+            return 1;
+        }
+        if (jm) {
+            std::string tmp = std::string(argv[3]) + "_tmp_verify.wav";
+            bool verified = false;
+            if (ahlc::decompress_audio_eabps(argv[3], tmp)) {
+                ahlc::AudioBuffer orig, rec;
+                if (ahlc::read_wav(argv[2], orig) && ahlc::read_wav(tmp, rec))
+                    verified = ahlc::audios_equal(orig, rec);
+                std::remove(tmp.c_str());
+            }
+            print_audio_eabps_json(s, verified);
+        } else {
+            ahlc::print_audio_eabps_stats(argv[2], argv[3], s);
+            std::string tmp = "__verify_audio_eabps_tmp.wav";
+            if (ahlc::decompress_audio_eabps(argv[3], tmp)) {
+                ahlc::AudioBuffer orig, rec;
+                if (ahlc::read_wav(argv[2], orig) && ahlc::read_wav(tmp, rec)) {
+                    bool ok = ahlc::audios_equal(orig, rec);
+                    std::cout << " Lossless verification: " << (ok ? "PASS" : "FAIL") << "\n";
+                    std::cout << "--------------------------------------------\n";
+                }
+                std::remove(tmp.c_str());
+            }
+        }
+        return 0;
+    }
+    if (cmd == "audio-eabps-decompress") {
+        if (argc < 4) { std::cerr << "Error: needs <in.ahmc> <out.wav>.\n"; return 1; }
+        if (!ahlc::decompress_audio_eabps(argv[2], argv[3])) return 1;
+        std::cout << "Done: " << argv[3] << "\n";
+        return 0;
+    }
+    if (cmd == "audio-eabps-test")      return ahlc::run_audio_eabps_test_suite() ? 0 : 1;
+    if (cmd == "audio-eabps-benchmark") return ahlc::run_audio_eabps_benchmark()  ? 0 : 1;
 
     // ---- Huffman ----
     if(cmd=="huffman-compress"){if(argc<4){std::cerr<<"Error: needs <in> <out>.\n";return 1;}ahlc::HuffStats s;if(!ahlc::huffman_compress(argv[2],argv[3],s))return 1;ahlc::print_huff_stats(s);return 0;}

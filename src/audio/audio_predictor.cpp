@@ -16,6 +16,7 @@
  */
 
 #include "audio_predictor.hpp"
+#include "audio_eabps.hpp"
 #include "../rle/rle_encoder.hpp"
 #include "../rle/rle_decoder.hpp"
 #include "../entropy/huffman.hpp"
@@ -218,6 +219,10 @@ bool decompress_audio(const std::string& ahmc_path, const std::string& wav_path)
 
     uint8_t version = 0;
     in.read(reinterpret_cast<char*>(&version), 1);
+    if (version == AHLA_VERSION_EABPS) {
+        in.close();
+        return decompress_audio_eabps(ahmc_path, wav_path);
+    }
     if (version < 1 || version > 2) {
         std::cerr << "Audio: unsupported version " << (int)version << ".\n"; return false;
     }

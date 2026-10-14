@@ -9,6 +9,10 @@
   </div>
   <div class="header-actions">
     <a href="{{ url_for('result', exp_id=exp.id) }}" class="btn btn-ghost">&larr; Back to Result</a>
+    <a href="{{ url_for('download_ahmc', exp_id=exp.id) }}" class="btn btn-ghost" title="Download compressed AHMC container bitstream">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      .AHMC Container
+    </a>
     <a href="{{ url_for('download_image', exp_id=exp.id) }}" class="btn btn-primary">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download {{ exp.filename.split('.')[-1]|upper }} File
@@ -56,6 +60,7 @@
       {% set ext_lower = exp.filename.split('.')[-1].lower() %}
       {% set is_vid = (exp.media_type == 'video' or ext_lower in ['avi', 'mp4']) %}
       {% set is_img = (exp.media_type == 'image' or ext_lower in ['bmp', 'png']) %}
+      {% set is_audio = (exp.media_type == 'audio' or ext_lower in ['wav', 'flac']) %}
       <div class="info-rows">
         <div class="info-row"><span>{{ "Shannon entropy (decoded raw frames)" if is_vid else ("Shannon entropy (raw pixels)" if is_img else "Shannon entropy (raw PCM)") }}</span>
           <span class="mono">{{ "%.6f"|format(exp.original_entropy or 0) }} bits/byte</span></div>
@@ -253,19 +258,25 @@
     <div class="report-section-body">
       <h2>EABPS (Entropy-Aware Block-wise Predictor Selection) Evaluation</h2>
       <p class="report-note" style="margin-bottom:14px">
-        EABPS partitions the image into independent {{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixel blocks,
-        evaluates candidate predictors (NONE, LEFT, UP) and codecs (RLE, Huffman, RAW) per block, and selects the combination
+        EABPS partitions the {% if is_audio %}audio sample stream into independent {{ exp.eabps_block_size }} sample frame blocks{% else %}image into independent {{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixel blocks{% endif %},
+        evaluates candidate predictors ({% if is_audio %}NONE, DELTA-1, DELTA-2{% else %}NONE, LEFT, UP{% endif %}) and codecs (RLE, Huffman, RAW) per block, and selects the combination
         yielding the lowest total encoded byte cost including per-block metadata and container overhead.
       </p>
       <div class="info-rows">
         <div class="info-row"><span>Algorithm version</span><span class="mono">AHMC v3 (EABPS Container)</span></div>
-        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} &times; {{ exp.eabps_block_size }} pixels</span></div>
-        <div class="info-row"><span>Total image blocks</span><span class="mono">{{ exp.eabps_total_blocks }} blocks</span></div>
+        <div class="info-row"><span>Block dimensions</span><span class="mono">{{ exp.eabps_block_size }} {% if is_audio %}sample frames{% else %}&times; {{ exp.eabps_block_size }} pixels{% endif %}</span></div>
+        <div class="info-row"><span>Total blocks</span><span class="mono">{{ exp.eabps_total_blocks }} blocks</span></div>
         <div class="info-row"><span>Predictor distribution</span>
           <span class="mono">
+            {% if is_audio %}
+            NONE: {{ exp.eabps_none_count }} ({{ "%.1f"|format(100.0 * exp.eabps_none_count / exp.eabps_total_blocks) }}%) &bull;
+            DELTA-1: {{ exp.eabps_delta1_count or exp.eabps_left_count }} ({{ "%.1f"|format(100.0 * (exp.eabps_delta1_count or exp.eabps_left_count) / exp.eabps_total_blocks) }}%) &bull;
+            DELTA-2: {{ exp.eabps_delta2_count or exp.eabps_up_count }} ({{ "%.1f"|format(100.0 * (exp.eabps_delta2_count or exp.eabps_up_count) / exp.eabps_total_blocks) }}%)
+            {% else %}
             NONE: {{ exp.eabps_none_count }} ({{ "%.1f"|format(100.0 * exp.eabps_none_count / exp.eabps_total_blocks) }}%) &bull;
             LEFT: {{ exp.eabps_left_count }} ({{ "%.1f"|format(100.0 * exp.eabps_left_count / exp.eabps_total_blocks) }}%) &bull;
             UP: {{ exp.eabps_up_count }} ({{ "%.1f"|format(100.0 * exp.eabps_up_count / exp.eabps_total_blocks) }}%)
+            {% endif %}
           </span>
         </div>
         <div class="info-row"><span>Entropy coder distribution</span>
@@ -293,9 +304,9 @@
           </span>
         </div>
         {% endif %}
-        <div class="info-row"><span>Lossless pixel verification</span>
+        <div class="info-row"><span>Lossless verification</span>
           <span class="{% if exp.eabps_verified or exp.verification %}verify-pass{% else %}verify-fail{% endif %}">
-            {% if exp.eabps_verified or exp.verification %}&check; PASS &mdash; Exact 100% pixel match{% else %}&cross; FAIL{% endif %}
+            {% if exp.eabps_verified or exp.verification %}&check; PASS &mdash; Exact 100% {% if is_audio %}sample{% else %}pixel{% endif %} match{% else %}&cross; FAIL{% endif %}
           </span>
         </div>
       </div>

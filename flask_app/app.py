@@ -236,6 +236,33 @@ def download_image(exp_id):
     )
 
 
+@app.route("/download/<int:exp_id>/ahmc")
+def download_ahmc(exp_id):
+    exp = db.get_experiment(exp_id)
+    if not exp:
+        abort(404)
+    p_str = exp.get("compressed_path") or exp.get("recovered_path")
+    if not p_str:
+        abort(404)
+    base_p = Path(p_str)
+    candidates = [
+        base_p.with_suffix(".ahmc"),
+        base_p.parent / f"{base_p.stem}_eabps.ahmc",
+        base_p.parent / f"{base_p.stem.replace('_compressed', '')}_eabps.ahmc",
+        base_p.parent / f"{base_p.stem}_internal.ahmc",
+        base_p.parent / f"{base_p.stem.replace('_compressed', '')}_internal.ahmc",
+    ]
+    for c in candidates:
+        if c.exists():
+            return send_file(
+                str(c),
+                as_attachment=True,
+                download_name=f"{Path(exp['filename']).stem}.ahmc",
+                mimetype="application/octet-stream"
+            )
+    abort(404)
+
+
 # ================================================================
 # API: dashboard stats JSON  GET /api/stats
 # ================================================================

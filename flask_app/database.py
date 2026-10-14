@@ -89,6 +89,8 @@ def init_db():
             ("eabps_metadata_size", "INTEGER DEFAULT 0"),
             ("eabps_overhead", "INTEGER DEFAULT 0"),
             ("eabps_verified", "INTEGER DEFAULT 0"),
+            ("eabps_delta1_count", "INTEGER DEFAULT 0"),
+            ("eabps_delta2_count", "INTEGER DEFAULT 0"),
             ("baseline_compressed_size", "INTEGER DEFAULT 0"),
             ("baseline_ratio", "REAL DEFAULT 0"),
         ]:
