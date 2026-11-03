@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <numeric>
 #include <functional>
+#include <thread>
 
 extern "C" {
 #include <libavutil/avutil.h>
@@ -62,11 +63,9 @@ static uint64_t v_rd64(std::istream& is) {
 // -----------------------------------------------------------------------
 // Helper: Shannon Entropy
 // -----------------------------------------------------------------------
-static double video_entropy(const std::vector<uint8_t>& data) {
-    if (data.empty()) return 0.0;
-    uint64_t counts[256] = {};
-    for (uint8_t b : data) counts[b]++;
-    const double n = static_cast<double>(data.size());
+static double video_entropy_from_counts(const uint64_t counts[256], uint64_t total) {
+    if (total == 0) return 0.0;
+    const double n = static_cast<double>(total);
     double ent = 0.0;
     for (int i = 0; i < 256; ++i) {
         if (counts[i] > 0) {
@@ -77,9 +76,94 @@ static double video_entropy(const std::vector<uint8_t>& data) {
     return ent;
 }
 
+[[maybe_unused]] static double video_entropy(const std::vector<uint8_t>& data) {
+    if (data.empty()) return 0.0;
+    uint64_t counts[256] = {};
+    for (uint8_t b : data) counts[b]++;
+    return video_entropy_from_counts(counts, data.size());
+}
+
+// -----------------------------------------------------------------------
+// Fast In-Memory RLE with Early Abort
+// -----------------------------------------------------------------------
+static inline size_t rle_encode_bounded(const uint8_t* in, size_t in_size, uint8_t* out, size_t best_cost) {
+    if (in_size == 0) return 0;
+    size_t i = 0;
+    size_t out_len = 0;
+    while (i < in_size) {
+        if (out_len >= best_cost) return SIZE_MAX;
+
+        size_t run = 1;
+        while (i + run < in_size && in[i + run] == in[i] && run < 129) {
+            ++run;
+        }
+
+        if (run >= 2) {
+            if (out_len + 2 >= best_cost) return SIZE_MAX;
+            out[out_len++] = static_cast<uint8_t>(0x80 + run - 2);
+            out[out_len++] = in[i];
+            i += run;
+        } else {
+            size_t lit_start = i;
+            size_t lit_count = 0;
+            while (i < in_size && lit_count < 128) {
+                if (lit_count > 0 && i + 1 < in_size && in[i] == in[i + 1]) {
+                    break;
+                }
+                ++lit_count;
+                ++i;
+            }
+            if (out_len + 1 + lit_count >= best_cost) return SIZE_MAX;
+            out[out_len++] = static_cast<uint8_t>(lit_count - 1);
+            std::memcpy(out + out_len, in + lit_start, lit_count);
+            out_len += lit_count;
+        }
+    }
+    return out_len;
+}
+
 // -----------------------------------------------------------------------
 // Block Prediction and Reconstruction Functions
 // -----------------------------------------------------------------------
+static inline void video_teabps_predict_block_fast(const uint8_t* cur_plane,
+                                                   const uint8_t* prev1_plane,
+                                                   const uint8_t* prev2_plane,
+                                                   uint32_t plane_w,
+                                                   uint32_t bx, uint32_t by,
+                                                   uint32_t bw, uint32_t bh,
+                                                   uint8_t predictor,
+                                                   uint8_t* out_res)
+{
+    size_t out_idx = 0;
+    for (uint32_t r = 0; r < bh; ++r) {
+        const size_t row_offset = static_cast<size_t>(by + r) * plane_w + bx;
+        const uint8_t* cp = cur_plane + row_offset;
+        if (predictor == VIDEO_TEABPS_PRED_NONE) {
+            std::memcpy(out_res + out_idx, cp, bw);
+            out_idx += bw;
+        } else if (predictor == VIDEO_TEABPS_PRED_TEMPORAL_D1) {
+            if (prev1_plane) {
+                const uint8_t* p1 = prev1_plane + row_offset;
+                for (uint32_t c = 0; c < bw; ++c) {
+                    out_res[out_idx++] = static_cast<uint8_t>(cp[c] - p1[c]);
+                }
+            } else {
+                std::memcpy(out_res + out_idx, cp, bw);
+                out_idx += bw;
+            }
+        } else if (predictor == VIDEO_TEABPS_PRED_TEMPORAL_D2) {
+            const uint8_t* p1 = prev1_plane ? prev1_plane + row_offset : nullptr;
+            const uint8_t* p2 = prev2_plane ? prev2_plane + row_offset : nullptr;
+            for (uint32_t c = 0; c < bw; ++c) {
+                const uint8_t v1 = p1 ? p1[c] : 0;
+                const uint8_t v2 = p2 ? p2[c] : 0;
+                const uint8_t pred = static_cast<uint8_t>(2 * v1 - v2);
+                out_res[out_idx++] = static_cast<uint8_t>(cp[c] - pred);
+            }
+        }
+    }
+}
+
 std::vector<uint8_t> video_teabps_predict_block(const uint8_t* cur_plane,
                                                 const uint8_t* prev1_plane,
                                                 const uint8_t* prev2_plane,
@@ -89,27 +173,9 @@ std::vector<uint8_t> video_teabps_predict_block(const uint8_t* cur_plane,
                                                 uint8_t predictor)
 {
     std::vector<uint8_t> residuals(static_cast<size_t>(bw) * bh);
-    size_t out_idx = 0;
-
-    for (uint32_t r = 0; r < bh; ++r) {
-        const size_t row_offset = static_cast<size_t>(by + r) * plane_w + bx;
-        for (uint32_t c = 0; c < bw; ++c) {
-            const uint8_t cur = cur_plane[row_offset + c];
-            uint8_t pred = 0;
-
-            if (predictor == VIDEO_TEABPS_PRED_NONE) {
-                pred = 0;
-            } else if (predictor == VIDEO_TEABPS_PRED_TEMPORAL_D1) {
-                pred = prev1_plane ? prev1_plane[row_offset + c] : 0;
-            } else if (predictor == VIDEO_TEABPS_PRED_TEMPORAL_D2) {
-                const uint8_t p1 = prev1_plane ? prev1_plane[row_offset + c] : 0;
-                const uint8_t p2 = prev2_plane ? prev2_plane[row_offset + c] : 0;
-                pred = static_cast<uint8_t>(2 * p1 - p2);
-            }
-
-            residuals[out_idx++] = static_cast<uint8_t>(cur - pred);
-        }
-    }
+    video_teabps_predict_block_fast(cur_plane, prev1_plane, prev2_plane,
+                                   plane_w, bx, by, bw, bh, predictor,
+                                   residuals.data());
     return residuals;
 }
 
@@ -366,18 +432,19 @@ bool compress_video_teabps(const RawYUVSequence& seq,
     stats.block_size = block_size;
     stats.original_raw_bytes = seq.raw_bytes();
 
-    std::vector<uint8_t> all_raw_samples;
-    all_raw_samples.reserve(static_cast<size_t>(std::min<uint64_t>(stats.original_raw_bytes, 10000000ULL)));
-    for (size_t f = 0; f < seq.frames.size(); ++f) {
-        for (int p = 0; p < 3; ++p) {
-            all_raw_samples.insert(all_raw_samples.end(),
-                                   seq.frames[f].planes[p].data.begin(),
-                                   seq.frames[f].planes[p].data.end());
-            if (all_raw_samples.size() >= 10000000ULL) break;
+    uint64_t raw_freq[256] = {};
+    uint64_t total_raw_samples = 0;
+    for (size_t f = 0; f < seq.frames.size() && total_raw_samples < 10000000ULL; ++f) {
+        for (int p = 0; p < 3 && total_raw_samples < 10000000ULL; ++p) {
+            const auto& pl_data = seq.frames[f].planes[p].data;
+            const size_t take = std::min<size_t>(pl_data.size(), 10000000ULL - total_raw_samples);
+            for (size_t i = 0; i < take; ++i) {
+                raw_freq[pl_data[i]]++;
+            }
+            total_raw_samples += take;
         }
-        if (all_raw_samples.size() >= 10000000ULL) break;
     }
-    stats.entropy_before = video_entropy(all_raw_samples);
+    stats.entropy_before = video_entropy_from_counts(raw_freq, total_raw_samples);
 
     // Calculate total block count across all frames and planes
     const uint32_t luma_bx = (seq.width + block_size - 1) / block_size;
@@ -394,121 +461,193 @@ bool compress_video_teabps(const RawYUVSequence& seq,
     stats.blocks.resize(total_blocks);
 
     std::vector<std::vector<uint8_t>> block_payloads(total_blocks);
-    std::vector<uint8_t> all_residuals_sample;
-    all_residuals_sample.reserve(10000000ULL);
 
-    size_t global_block_idx = 0;
+    struct ThreadBlockStats {
+        uint32_t count_none = 0;
+        uint32_t count_d1 = 0;
+        uint32_t count_d2 = 0;
+        uint32_t count_rle = 0;
+        uint32_t count_huffman = 0;
+        uint32_t count_raw = 0;
+        uint64_t encoded_payload_size = 0;
+        uint64_t res_freq[256] = {};
+        uint64_t res_count = 0;
+    };
 
-    for (uint32_t f = 0; f < seq.frame_count; ++f) {
-        const auto& cur_frame = seq.frames[f];
-        const RawYUVFrame* prev1 = (f >= 1) ? &seq.frames[f - 1] : nullptr;
-        const RawYUVFrame* prev2 = (f >= 2) ? &seq.frames[f - 2] : nullptr;
+    auto worker_fn = [&](uint32_t f_start, uint32_t f_end, ThreadBlockStats& t_stats) {
+        const size_t max_block_pix = static_cast<size_t>(block_size) * block_size + 512;
+        std::vector<uint8_t> res_buf(max_block_pix);
+        std::vector<uint8_t> best_res_buf(max_block_pix);
+        std::vector<uint8_t> rle_buf(max_block_pix * 2 + 512);
 
-        for (int p = 0; p < 3; ++p) {
-            const auto& cur_plane = cur_frame.planes[p];
-            const uint8_t* p1_data = prev1 ? prev1->planes[p].data.data() : nullptr;
-            const uint8_t* p2_data = prev2 ? prev2->planes[p].data.data() : nullptr;
+        for (uint32_t f = f_start; f < f_end; ++f) {
+            const auto& cur_frame = seq.frames[f];
+            const RawYUVFrame* prev1 = (f >= 1) ? &seq.frames[f - 1] : nullptr;
+            const RawYUVFrame* prev2 = (f >= 2) ? &seq.frames[f - 2] : nullptr;
 
-            const uint32_t pw = cur_plane.width;
-            const uint32_t ph = cur_plane.height;
-            const uint16_t bs = (p == 0) ? block_size : chroma_bs;
-            const uint32_t nbx = (pw + bs - 1) / bs;
-            const uint32_t nby = (ph + bs - 1) / bs;
+            const size_t f_base = static_cast<size_t>(f) * blocks_per_frame;
 
-            for (uint32_t by = 0; by < nby; ++by) {
-                for (uint32_t bx = 0; bx < nbx; ++bx) {
-                    const uint16_t actual_bw = static_cast<uint16_t>(std::min<uint32_t>(bs, pw - bx * bs));
-                    const uint16_t actual_bh = static_cast<uint16_t>(std::min<uint32_t>(bs, ph - by * bs));
+            for (int p = 0; p < 3; ++p) {
+                const auto& cur_plane = cur_frame.planes[p];
+                const uint8_t* p1_data = prev1 ? prev1->planes[p].data.data() : nullptr;
+                const uint8_t* p2_data = prev2 ? prev2->planes[p].data.data() : nullptr;
 
-                    VideoTEABPSBlockRecord rec;
-                    rec.frame_idx = f;
-                    rec.plane_idx = static_cast<uint8_t>(p);
-                    rec.bx = static_cast<uint16_t>(bx * bs);
-                    rec.by = static_cast<uint16_t>(by * bs);
-                    rec.bw = actual_bw;
-                    rec.bh = actual_bh;
+                const uint32_t pw = cur_plane.width;
+                const uint32_t ph = cur_plane.height;
+                const uint16_t bs = (p == 0) ? block_size : chroma_bs;
+                const uint32_t nbx = (pw + bs - 1) / bs;
+                const uint32_t nby = (ph + bs - 1) / bs;
 
-                    // Evaluate candidates based on actual encoded cost
-                    uint8_t best_pred = VIDEO_TEABPS_PRED_NONE;
-                    uint8_t best_codec = VIDEO_TEABPS_CODEC_RAW;
-                    size_t best_cost = SIZE_MAX;
-                    std::vector<uint8_t> best_payload;
-                    std::vector<uint8_t> best_res;
+                const size_t p_offset = (p == 0) ? 0 : (p == 1 ? luma_bx * luma_by : luma_bx * luma_by + chroma_bx * chroma_by);
+                const size_t plane_base = f_base + p_offset;
 
-                    // Eligible predictors for this frame
-                    std::vector<uint8_t> eligible_preds = {VIDEO_TEABPS_PRED_NONE};
-                    if (f >= 1) eligible_preds.push_back(VIDEO_TEABPS_PRED_TEMPORAL_D1);
-                    if (f >= 2) eligible_preds.push_back(VIDEO_TEABPS_PRED_TEMPORAL_D2);
+                for (uint32_t by = 0; by < nby; ++by) {
+                    for (uint32_t bx = 0; bx < nbx; ++bx) {
+                        const uint16_t actual_bw = static_cast<uint16_t>(std::min<uint32_t>(bs, pw - bx * bs));
+                        const uint16_t actual_bh = static_cast<uint16_t>(std::min<uint32_t>(bs, ph - by * bs));
+                        const size_t raw_cost = static_cast<size_t>(actual_bw) * actual_bh;
 
-                    for (uint8_t pred_cand : eligible_preds) {
-                        std::vector<uint8_t> res = video_teabps_predict_block(cur_plane.data.data(),
-                                                                             p1_data, p2_data,
-                                                                             pw, rec.bx, rec.by,
-                                                                             actual_bw, actual_bh,
-                                                                             pred_cand);
+                        VideoTEABPSBlockRecord rec;
+                        rec.frame_idx = f;
+                        rec.plane_idx = static_cast<uint8_t>(p);
+                        rec.bx = static_cast<uint16_t>(bx * bs);
+                        rec.by = static_cast<uint16_t>(by * bs);
+                        rec.bw = actual_bw;
+                        rec.bh = actual_bh;
 
-                        // Codec 1: RAW
-                        const size_t raw_cost = res.size();
-                        if (raw_cost < best_cost) {
-                            best_cost = raw_cost;
-                            best_pred = pred_cand;
-                            best_codec = VIDEO_TEABPS_CODEC_RAW;
-                            best_payload = res;
-                            best_res = res;
-                        }
+                        uint8_t best_pred = VIDEO_TEABPS_PRED_NONE;
+                        uint8_t best_codec = VIDEO_TEABPS_CODEC_RAW;
+                        size_t best_cost = SIZE_MAX;
+                        std::vector<uint8_t> best_payload;
 
-                        // Codec 2: RLE
-                        std::vector<uint8_t> rle_out;
-                        if (rle_compress_mem(res, rle_out)) {
-                            if (rle_out.size() < best_cost) {
-                                best_cost = rle_out.size();
+                        uint8_t eligible_preds[3] = {VIDEO_TEABPS_PRED_NONE, 0, 0};
+                        int pred_count = 1;
+                        if (f >= 1) eligible_preds[pred_count++] = VIDEO_TEABPS_PRED_TEMPORAL_D1;
+                        if (f >= 2) eligible_preds[pred_count++] = VIDEO_TEABPS_PRED_TEMPORAL_D2;
+
+                        for (int i = 0; i < pred_count; ++i) {
+                            uint8_t pred_cand = eligible_preds[i];
+                            video_teabps_predict_block_fast(cur_plane.data.data(),
+                                                           p1_data, p2_data,
+                                                           pw, rec.bx, rec.by,
+                                                           actual_bw, actual_bh,
+                                                           pred_cand,
+                                                           res_buf.data());
+
+                            // Codec 1: RAW
+                            if (raw_cost < best_cost) {
+                                best_cost = raw_cost;
+                                best_pred = pred_cand;
+                                best_codec = VIDEO_TEABPS_CODEC_RAW;
+                                best_payload.assign(res_buf.data(), res_buf.data() + raw_cost);
+                                std::memcpy(best_res_buf.data(), res_buf.data(), raw_cost);
+                            }
+
+                            // Codec 2: RLE with early abort
+                            size_t rle_cost = rle_encode_bounded(res_buf.data(), raw_cost, rle_buf.data(), best_cost);
+                            if (rle_cost < best_cost) {
+                                best_cost = rle_cost;
                                 best_pred = pred_cand;
                                 best_codec = VIDEO_TEABPS_CODEC_RLE;
-                                best_payload = std::move(rle_out);
-                                best_res = res;
+                                best_payload.assign(rle_buf.data(), rle_buf.data() + rle_cost);
+                                std::memcpy(best_res_buf.data(), res_buf.data(), raw_cost);
+                            }
+
+                            // Codec 3: Huffman (Header is 269 bytes, min total >= 270 bytes)
+                            if (best_cost > 269) {
+                                std::vector<uint8_t> in_vec(res_buf.data(), res_buf.data() + raw_cost);
+                                std::vector<uint8_t> huff_out;
+                                if (huffman_compress_mem(in_vec, huff_out)) {
+                                    if (huff_out.size() < best_cost) {
+                                        best_cost = huff_out.size();
+                                        best_pred = pred_cand;
+                                        best_codec = VIDEO_TEABPS_CODEC_HUFFMAN;
+                                        best_payload = std::move(huff_out);
+                                        std::memcpy(best_res_buf.data(), res_buf.data(), raw_cost);
+                                    }
+                                }
                             }
                         }
 
-                        // Codec 3: Huffman
-                        std::vector<uint8_t> huff_out;
-                        if (huffman_compress_mem(res, huff_out)) {
-                            if (huff_out.size() < best_cost) {
-                                best_cost = huff_out.size();
-                                best_pred = pred_cand;
-                                best_codec = VIDEO_TEABPS_CODEC_HUFFMAN;
-                                best_payload = std::move(huff_out);
-                                best_res = res;
+                        rec.predictor = best_pred;
+                        rec.codec = best_codec;
+                        rec.payload_size = static_cast<uint32_t>(best_payload.size());
+
+                        if (best_pred == VIDEO_TEABPS_PRED_NONE)               t_stats.count_none++;
+                        else if (best_pred == VIDEO_TEABPS_PRED_TEMPORAL_D1)  t_stats.count_d1++;
+                        else if (best_pred == VIDEO_TEABPS_PRED_TEMPORAL_D2)  t_stats.count_d2++;
+
+                        if (best_codec == VIDEO_TEABPS_CODEC_RLE)             t_stats.count_rle++;
+                        else if (best_codec == VIDEO_TEABPS_CODEC_HUFFMAN)    t_stats.count_huffman++;
+                        else if (best_codec == VIDEO_TEABPS_CODEC_RAW)        t_stats.count_raw++;
+
+                        t_stats.encoded_payload_size += rec.payload_size;
+
+                        if (t_stats.res_count < 10000000ULL) {
+                            const size_t take = std::min<size_t>(raw_cost, 10000000ULL - t_stats.res_count);
+                            for (size_t k = 0; k < take; ++k) {
+                                t_stats.res_freq[best_res_buf[k]]++;
                             }
+                            t_stats.res_count += take;
                         }
+
+                        const size_t blk_idx = plane_base + by * nbx + bx;
+                        stats.blocks[blk_idx] = rec;
+                        block_payloads[blk_idx] = std::move(best_payload);
                     }
-
-                    rec.predictor = best_pred;
-                    rec.codec = best_codec;
-                    rec.payload_size = static_cast<uint32_t>(best_payload.size());
-
-                    if (best_pred == VIDEO_TEABPS_PRED_NONE)               stats.count_none++;
-                    else if (best_pred == VIDEO_TEABPS_PRED_TEMPORAL_D1)  stats.count_d1++;
-                    else if (best_pred == VIDEO_TEABPS_PRED_TEMPORAL_D2)  stats.count_d2++;
-
-                    if (best_codec == VIDEO_TEABPS_CODEC_RLE)             stats.count_rle++;
-                    else if (best_codec == VIDEO_TEABPS_CODEC_HUFFMAN)    stats.count_huffman++;
-                    else if (best_codec == VIDEO_TEABPS_CODEC_RAW)        stats.count_raw++;
-
-                    stats.encoded_payload_size += rec.payload_size;
-                    stats.blocks[global_block_idx] = rec;
-                    block_payloads[global_block_idx] = std::move(best_payload);
-
-                    if (all_residuals_sample.size() < 10000000ULL) {
-                        all_residuals_sample.insert(all_residuals_sample.end(), best_res.begin(), best_res.end());
-                    }
-
-                    global_block_idx++;
                 }
             }
         }
+    };
+
+    uint32_t num_threads = std::thread::hardware_concurrency();
+    if (num_threads == 0) num_threads = 1;
+    num_threads = std::min<uint32_t>(num_threads, seq.frame_count);
+
+    if (num_threads <= 1) {
+        ThreadBlockStats single_stats;
+        worker_fn(0, seq.frame_count, single_stats);
+        stats.count_none = single_stats.count_none;
+        stats.count_d1 = single_stats.count_d1;
+        stats.count_d2 = single_stats.count_d2;
+        stats.count_rle = single_stats.count_rle;
+        stats.count_huffman = single_stats.count_huffman;
+        stats.count_raw = single_stats.count_raw;
+        stats.encoded_payload_size = single_stats.encoded_payload_size;
+        stats.entropy_after = video_entropy_from_counts(single_stats.res_freq, single_stats.res_count);
+    } else {
+        std::vector<ThreadBlockStats> t_stats(num_threads);
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        uint32_t frames_per_thread = seq.frame_count / num_threads;
+        uint32_t rem = seq.frame_count % num_threads;
+        uint32_t cur_f = 0;
+        for (uint32_t t = 0; t < num_threads; ++t) {
+            uint32_t count = frames_per_thread + (t < rem ? 1 : 0);
+            uint32_t f_start = cur_f;
+            uint32_t f_end = cur_f + count;
+            cur_f = f_end;
+            threads.emplace_back(worker_fn, f_start, f_end, std::ref(t_stats[t]));
+        }
+        for (auto& th : threads) {
+            if (th.joinable()) th.join();
+        }
+        uint64_t combined_res_freq[256] = {};
+        uint64_t combined_res_count = 0;
+        for (const auto& ts : t_stats) {
+            stats.count_none += ts.count_none;
+            stats.count_d1 += ts.count_d1;
+            stats.count_d2 += ts.count_d2;
+            stats.count_rle += ts.count_rle;
+            stats.count_huffman += ts.count_huffman;
+            stats.count_raw += ts.count_raw;
+            stats.encoded_payload_size += ts.encoded_payload_size;
+            for (int s = 0; s < 256; ++s) combined_res_freq[s] += ts.res_freq[s];
+            combined_res_count += ts.res_count;
+        }
+        stats.entropy_after = video_entropy_from_counts(combined_res_freq, combined_res_count);
     }
 
-    stats.entropy_after = video_entropy(all_residuals_sample);
     stats.predictor_metadata_size = static_cast<uint64_t>(total_blocks) * 6;
 
     // Write Container: AHLV v3

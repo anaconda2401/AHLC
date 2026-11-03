@@ -33,6 +33,11 @@ bool BitReader::open(const std::string& path)
         return true;
     }
 
+    if (padding_ > 7 || static_cast<uint64_t>(padding_) > data_bytes * 8) {
+        std::cerr << "BitReader: invalid padding count: " << static_cast<int>(padding_) << "\n";
+        return false;
+    }
+
     // Total valid bits = (data bytes * 8) minus padding bits.
     total_bits_ = data_bytes * 8 - static_cast<uint64_t>(padding_);
     bits_read_  = 0;

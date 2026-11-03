@@ -197,28 +197,29 @@ def report(exp_id):
 
 
 # ================================================================
-# Download file (BMP, PNG, WAV, or FLAC)
+# Download file (BMP, PNG, WAV, FLAC, AVI, or MP4 reconstructed/playable)
 # ================================================================
 @app.route("/download/<int:exp_id>")
 @app.route("/download/<int:exp_id>/file")
 @app.route("/download/<int:exp_id>/image")
 @app.route("/download/<int:exp_id>/audio")
 @app.route("/download/<int:exp_id>/video")
-@app.route("/download/<int:exp_id>/compressed")
 @app.route("/download/<int:exp_id>/recovered")
 def download_image(exp_id):
     exp = db.get_experiment(exp_id)
     if not exp:
         abort(404)
-    p_str = exp.get("compressed_path") or exp.get("recovered_path")
-    if not p_str:
+    # Prefer reconstructed/playable standard media file for standard player/viewer compatibility
+    p_str = exp.get("recovered_path") or exp.get("lossless_path") or exp.get("compressed_path")
+    if not p_str or not Path(p_str).exists():
+        p_str = exp.get("original_path")
+    if not p_str or not Path(p_str).exists():
         abort(404)
     p = Path(p_str)
-    if not p.exists():
-        abort(404)
 
     orig_name = exp["filename"]
-    ext = orig_name.rsplit(".", 1)[-1].lower() if "." in orig_name else ""
+    orig_stem = Path(orig_name).stem
+    ext = p.suffix.lstrip(".").lower() or (orig_name.rsplit(".", 1)[-1].lower() if "." in orig_name else "")
     mime_map = {
         "bmp": "image/bmp",
         "png": "image/png",
@@ -226,12 +227,15 @@ def download_image(exp_id):
         "flac": "audio/flac",
         "avi": "video/x-msvideo",
         "mp4": "video/mp4",
+        "ahmc": "application/octet-stream",
+        "ahlv": "application/octet-stream",
     }
     mimetype = mime_map.get(ext, "application/octet-stream")
+    download_filename = f"{orig_stem}.{ext}" if ext else orig_name
     return send_file(
         str(p),
         as_attachment=True,
-        download_name=orig_name,
+        download_name=download_filename,
         mimetype=mimetype,
     )
 
@@ -288,6 +292,7 @@ def download_playback(exp_id):
 
 
 # ================================================================
+# ================================================================
 # Download Lossless Master (FFV1 AVI or exact raw/master file)
 # ================================================================
 @app.route("/download/<int:exp_id>/lossless")
@@ -296,12 +301,13 @@ def download_lossless(exp_id):
     exp = db.get_experiment(exp_id)
     if not exp:
         abort(404)
-    p_str = exp.get("lossless_path") or exp.get("compressed_path") or exp.get("recovered_path")
+    p_str = exp.get("lossless_path") or exp.get("recovered_path") or exp.get("compressed_path")
     if not p_str or not Path(p_str).exists():
         abort(404)
     p = Path(p_str)
     orig_name = exp["filename"]
-    ext = orig_name.rsplit(".", 1)[-1].lower() if "." in orig_name else ""
+    orig_stem = Path(orig_name).stem
+    ext = p.suffix.lstrip(".").lower() or (orig_name.rsplit(".", 1)[-1].lower() if "." in orig_name else "")
     mime_map = {
         "bmp": "image/bmp",
         "png": "image/png",
@@ -311,14 +317,17 @@ def download_lossless(exp_id):
         "mp4": "video/mp4",
     }
     mimetype = mime_map.get(ext, "application/octet-stream")
+    is_video = (exp.get("media_type") == "video" or orig_name.lower().endswith((".avi", ".mp4")))
+    out_name = f"{orig_stem}_lossless.{ext}" if is_video else f"{orig_stem}.{ext}"
     return send_file(
         str(p),
         as_attachment=True,
-        download_name=orig_name,
+        download_name=out_name,
         mimetype=mimetype,
     )
 
 
+@app.route("/download/<int:exp_id>/compressed")
 @app.route("/download/<int:exp_id>/ahmc")
 @app.route("/download/<int:exp_id>/ahlv")
 def download_ahmc(exp_id):
@@ -333,6 +342,16 @@ def download_ahmc(exp_id):
     orig_name = exp["filename"]
     orig_stem = Path(orig_name).stem
     is_video = (exp.get("media_type") == "video" or orig_name.lower().endswith((".avi", ".mp4")))
+
+    # Check if compressed_path itself is an AHMC or AHLV container
+    if base_p.exists() and base_p.suffix.lower() in (".ahmc", ".ahlv"):
+        out_ext = base_p.suffix.lower()
+        return send_file(
+            str(base_p),
+            as_attachment=True,
+            download_name=f"{orig_stem}{out_ext}",
+            mimetype="application/octet-stream"
+        )
 
     candidates = [
         base_p.parent / f"{base_p.stem}_teabps.ahlv",
@@ -361,6 +380,15 @@ def download_ahmc(exp_id):
                 download_name=f"{orig_stem}{out_ext}",
                 mimetype="application/octet-stream"
             )
+
+    # Fall back to compressed_path if exists
+    if base_p.exists():
+        return send_file(
+            str(base_p),
+            as_attachment=True,
+            download_name=orig_name,
+            mimetype="application/octet-stream"
+        )
     abort(404)
 
 

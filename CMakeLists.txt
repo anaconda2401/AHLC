@@ -69,16 +69,15 @@ if(WIN32)
     else()
         set(_ffmpeg_bin "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-windows/bin")
     endif()
-    add_custom_command(TARGET ahmc POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${_ffmpeg_bin}/avutil-61.dll"
-            "${_ffmpeg_bin}/avcodec-63.dll"
-            "${_ffmpeg_bin}/avformat-63.dll"
-            "${_ffmpeg_bin}/avdevice-63.dll"
-            "${_ffmpeg_bin}/avfilter-12.dll"
-            "${_ffmpeg_bin}/swscale-10.dll"
-            "${_ffmpeg_bin}/swresample-7.dll"
-            $<TARGET_FILE_DIR:ahmc>
-        COMMENT "Copying FFmpeg DLLs to output directory"
-    )
+    if(EXISTS "${_ffmpeg_bin}")
+        file(GLOB _ffmpeg_dlls "${_ffmpeg_bin}/*.dll")
+        if(_ffmpeg_dlls)
+            add_custom_command(TARGET ahmc POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${_ffmpeg_dlls}
+                    $<TARGET_FILE_DIR:ahmc>
+                COMMENT "Copying FFmpeg DLLs to output directory"
+            )
+        endif()
+    endif()
 endif()

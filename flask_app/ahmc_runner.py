@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import time
+import concurrent.futures
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +24,28 @@ import soundfile as sf
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-AHMC_EXE = PROJECT_ROOT / "build" / "Release" / "ahmc.exe"
+
+
+def get_ahmc_exe() -> Path:
+    env_p = os.environ.get("AHMC_EXE")
+    if env_p and Path(env_p).is_file():
+        return Path(env_p)
+    candidates = [
+        PROJECT_ROOT / "build" / "Release" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "Debug" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "RelWithDebInfo" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "Release" / "ahmc",
+        PROJECT_ROOT / "build" / "ahmc",
+        PROJECT_ROOT / "build" / "Debug" / "ahmc",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return PROJECT_ROOT / "build" / "Release" / "ahmc.exe"
+
+
+AHMC_EXE = get_ahmc_exe()
 
 
 @dataclass
@@ -37,7 +59,10 @@ class RunResult:
 
 def _run(*args: str, timeout: int = 120) -> RunResult:
     """Execute ahmc.exe with the given arguments. Never uses shell=True."""
-    cmd = [str(AHMC_EXE)] + list(args)
+    exe = get_ahmc_exe()
+    if not exe.is_file():
+        return RunResult(success=False, error=f"ahmc binary not found at {exe}. Build the C++ project first.")
+    cmd = [str(exe)] + list(args)
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(
@@ -509,21 +534,26 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
     reconstructed_eabps_bmp = output_path.parent / (output_path.stem + "_eabps_decompressed.bmp")
     dec_e = _run("image-eabps-decompress", str(eabps_ahmc), str(reconstructed_eabps_bmp))
 
+    baseline_ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
+
     candidates = []
 
-    # Candidate A: Standard reconstructed BMP from baseline AHLC engine
-    if reconstructed_bmp.exists() and verify_pixels_identical(input_path, reconstructed_bmp):
+    # Candidate A: Baseline AHMC container
+    if internal_ahmc.exists() and reconstructed_bmp.exists() and verify_pixels_identical(input_path, reconstructed_bmp):
         candidates.append((
-            reconstructed_bmp.stat().st_size,
+            baseline_ahmc_sz,
+            internal_ahmc,
             reconstructed_bmp,
             "AHLC Baseline (Spatial Predictor + Adaptive Codec)",
             "baseline"
         ))
 
-    # Candidate B: EABPS reconstructed BMP from AHLC EABPS engine
-    if reconstructed_eabps_bmp.exists() and verify_pixels_identical(input_path, reconstructed_eabps_bmp):
+    # Candidate B: EABPS AHMC container
+    if eabps_ahmc.exists() and reconstructed_eabps_bmp.exists() and verify_pixels_identical(input_path, reconstructed_eabps_bmp):
         candidates.append((
-            reconstructed_eabps_bmp.stat().st_size,
+            eabps_ahmc_sz,
+            eabps_ahmc,
             reconstructed_eabps_bmp,
             "AHLC EABPS (Entropy-Aware Block-wise Predictor Selection)",
             "eabps"
@@ -554,6 +584,7 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
                     candidates.append((
                         pal_candidate.stat().st_size,
                         pal_candidate,
+                        pal_candidate,
                         "Lossless 8-bit Paletted BMP",
                         "palette"
                     ))
@@ -572,6 +603,7 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
                         candidates.append((
                             rgb_candidate.stat().st_size,
                             rgb_candidate,
+                            rgb_candidate,
                             "Lossless 24-bit BGR Optimization (Opaque Alpha)",
                             "rgb24"
                         ))
@@ -579,17 +611,27 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
         pass
 
     # Candidate E: Original input BMP (fallback)
-    candidates.append((orig_size, input_path, "Original BMP (Minimal Representation)", "original"))
+    candidates.append((orig_size, input_path, input_path, "Original BMP (Minimal Representation)", "original"))
 
     # Sort candidates by size ascending to select smallest valid representation
     candidates.sort(key=lambda x: x[0])
-    best_size, best_path, best_method, best_kind = candidates[0]
+    best_size, best_container, best_rec, best_method, best_kind = candidates[0]
 
-    # Save to final output BMP
+    # Save to final output BMP (valid reconstructed BMP for preview/standard download)
     final_bmp = output_path.with_suffix(".bmp")
-    if best_path.resolve() != final_bmp.resolve():
-        shutil.copyfile(best_path, final_bmp)
-    actual_output_size = final_bmp.stat().st_size
+    if best_rec.resolve() != final_bmp.resolve():
+        shutil.copyfile(best_rec, final_bmp)
+
+    # Save to final compressed container if baseline/eabps won
+    final_ahmc = output_path.with_suffix(".ahmc")
+    if best_kind in ("eabps", "baseline") and best_container.exists():
+        if best_container.resolve() != final_ahmc.resolve():
+            shutil.copyfile(best_container, final_ahmc)
+        actual_output_size = final_ahmc.stat().st_size
+        compressed_path_target = str(final_ahmc)
+    else:
+        actual_output_size = final_bmp.stat().st_size
+        compressed_path_target = str(final_bmp)
 
     verified = verify_pixels_identical(input_path, final_bmp)
     comp_ms = (time.perf_counter() - t0) * 1000
@@ -599,8 +641,6 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
     ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
 
     is_fallback = (bytes_saved <= 0)
-    baseline_ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
-    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
 
     if is_fallback:
         bytes_saved = 0
@@ -623,7 +663,7 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
             selected_codec = best_kind
             container_overhead = 0
 
-    candidate_codec = "eabps" if (eabps_ahmc_sz > 0 and eabps_ahmc_sz <= baseline_ahmc_sz) else c_data.get("selected_codec", "adaptive")
+    candidate_codec = "eabps" if (eabps_ahmc_sz > 0 and (baseline_ahmc_sz == 0 or eabps_ahmc_sz <= baseline_ahmc_sz)) else c_data.get("selected_codec", "adaptive")
     ahmc_sz = eabps_ahmc_sz if (eabps_ahmc_sz > 0 and (baseline_ahmc_sz == 0 or eabps_ahmc_sz <= baseline_ahmc_sz)) else baseline_ahmc_sz
 
     w = e_data.get("width") or c_data.get("width", 0)
@@ -657,8 +697,9 @@ def compress_bmp(input_path: Path, output_path: Path) -> dict:
         "verification_label": "Pixel-identical verification: PASS" if verified else "Verification: FAIL",
         "compression_time_ms": comp_ms,
         "decompression_time_ms": e_data.get("decompression_time_ms") or c_data.get("decompression_time_ms", 0.0),
-        "compressed_path": str(final_bmp),
+        "compressed_path": compressed_path_target,
         "recovered_path": str(final_bmp),
+        "lossless_path": str(final_bmp),
         "predictor": "eabps" if best_kind == "eabps" else c_data.get("predictor", "left"),
         "selected_codec": selected_codec,
         "candidate_codec": candidate_codec,
@@ -765,6 +806,7 @@ def compress_png(input_path: Path, output_path: Path) -> dict:
         "decompression_time_ms": 0.0,
         "compressed_path": str(final_png),
         "recovered_path": str(final_png),
+        "lossless_path": str(final_png),
         "predictor": "adaptive scanline filter",
         "selected_codec": selected_codec,
         "candidate_codec": "deflate-l9",
@@ -811,30 +853,44 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
     eabps_ver = reconstructed_eabps_wav.exists() and verify_audio_identical(input_path, reconstructed_eabps_wav)
 
     # 5. Candidate selection
+    baseline_ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
+    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
+
     candidates = []
-    if reconstructed_base_wav.exists() and base_ver:
+    if internal_ahmc.exists() and reconstructed_base_wav.exists() and base_ver:
         candidates.append((
-            reconstructed_base_wav.stat().st_size,
+            baseline_ahmc_sz,
+            internal_ahmc,
             reconstructed_base_wav,
             "AHLC Baseline (Delta Predictor + Adaptive Codec)",
             "baseline"
         ))
-    if reconstructed_eabps_wav.exists() and eabps_ver:
+    if eabps_ahmc.exists() and reconstructed_eabps_wav.exists() and eabps_ver:
         candidates.append((
-            reconstructed_eabps_wav.stat().st_size,
+            eabps_ahmc_sz,
+            eabps_ahmc,
             reconstructed_eabps_wav,
             "AHLC EABPS Audio (Entropy-Aware Block-wise Predictor Selection)",
             "eabps"
         ))
-    candidates.append((orig_size, input_path, "Original WAV Retained (Minimal Representation)", "original"))
+    candidates.append((orig_size, input_path, input_path, "Original WAV Retained (Minimal Representation)", "original"))
 
     candidates.sort(key=lambda x: x[0])
-    best_size, best_path, best_method, best_kind = candidates[0]
+    best_size, best_container, best_rec, best_method, best_kind = candidates[0]
 
     final_wav = output_path.with_suffix(".wav")
-    if best_path.resolve() != final_wav.resolve():
-        shutil.copyfile(best_path, final_wav)
-    actual_output_size = final_wav.stat().st_size
+    if best_rec.resolve() != final_wav.resolve():
+        shutil.copyfile(best_rec, final_wav)
+
+    final_ahmc = output_path.with_suffix(".ahmc")
+    if best_kind in ("eabps", "baseline") and best_container.exists():
+        if best_container.resolve() != final_ahmc.resolve():
+            shutil.copyfile(best_container, final_ahmc)
+        actual_output_size = final_ahmc.stat().st_size
+        compressed_path_target = str(final_ahmc)
+    else:
+        actual_output_size = final_wav.stat().st_size
+        compressed_path_target = str(final_wav)
 
     final_verified = verify_audio_identical(input_path, final_wav)
     comp_ms = (time.perf_counter() - t0) * 1000
@@ -844,8 +900,6 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
     ratio = (orig_size / actual_output_size) if actual_output_size > 0 else 1.0
 
     is_fallback = (bytes_saved <= 0)
-    baseline_ahmc_sz = internal_ahmc.stat().st_size if internal_ahmc.exists() else 0
-    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
 
     if is_fallback:
         bytes_saved = 0
@@ -906,8 +960,9 @@ def compress_wav(input_path: Path, output_path: Path) -> dict:
         "verification_label": "Sample-identical verification: PASS" if final_verified else "Verification: FAIL",
         "compression_time_ms": comp_ms,
         "decompression_time_ms": e_data.get("decompression_time_ms") or c_data.get("decompression_time_ms", 0.0),
-        "compressed_path": str(final_wav),
+        "compressed_path": compressed_path_target,
         "recovered_path": str(final_wav),
+        "lossless_path": str(final_wav),
         "predictor": "eabps_audio" if best_kind == "eabps" else c_data.get("predictor", "delta"),
         "selected_codec": selected_codec,
         "candidate_codec": candidate_codec,
@@ -983,6 +1038,12 @@ def compress_flac(input_path: Path, output_path: Path) -> dict:
     c_res = _run("audio-compress", str(temp_pcm_wav), str(internal_ahmc), "--json")
     c_data = _parse_json(c_res) or {}
 
+    # Run EABPS audio compression engine on decoded PCM WAV
+    eabps_ahmc = output_path.parent / (output_path.stem + "_flac_eabps.ahmc")
+    e_res = _run("audio-eabps-compress", str(temp_pcm_wav), str(eabps_ahmc), "--block-size", "4096", "--json")
+    e_data = _parse_json(e_res) or {}
+    eabps_ahmc_sz = eabps_ahmc.stat().st_size if eabps_ahmc.exists() else 0
+
     # 3. Reconstruct PCM WAV from .ahmc
     recovered_pcm_wav = output_path.parent / (output_path.stem + "_recovered_pcm.wav")
     dec = _run("audio-decompress", str(internal_ahmc), str(recovered_pcm_wav))
@@ -1056,6 +1117,7 @@ def compress_flac(input_path: Path, output_path: Path) -> dict:
         "decompression_time_ms": c_data.get("decompression_time_ms", 0.0),
         "compressed_path": str(final_flac),
         "recovered_path": str(final_flac),
+        "lossless_path": str(final_flac),
         "predictor": c_data.get("predictor", "delta"),
         "selected_codec": selected_codec,
         "candidate_codec": c_data.get("selected_codec", "flac"),
@@ -1072,6 +1134,26 @@ def compress_flac(input_path: Path, output_path: Path) -> dict:
         "sample_rate": sample_rate,
         "bits_per_sample": bps,
         "duration_seconds": duration_sec,
+        # EABPS specific audio metrics
+        "eabps_compressed_size": eabps_ahmc_sz,
+        "eabps_ratio": round(orig_size / eabps_ahmc_sz, 3) if eabps_ahmc_sz > 0 else 1.0,
+        "eabps_saved_percent": round((orig_size - eabps_ahmc_sz) / orig_size * 100.0, 2) if (orig_size > 0 and eabps_ahmc_sz > 0) else 0.0,
+        "eabps_block_size": e_data.get("block_size", 4096),
+        "eabps_total_blocks": e_data.get("total_blocks", 0),
+        "eabps_none_count": e_data.get("count_none", 0),
+        "eabps_delta1_count": e_data.get("count_delta1", 0),
+        "eabps_delta2_count": e_data.get("count_delta2", 0),
+        "eabps_left_count": e_data.get("count_delta1", 0),
+        "eabps_up_count": e_data.get("count_delta2", 0),
+        "eabps_rle_count": e_data.get("count_rle", 0),
+        "eabps_huffman_count": e_data.get("count_huffman", 0),
+        "eabps_raw_count": e_data.get("count_raw", 0),
+        "eabps_payload_size": e_data.get("encoded_payload_size", 0),
+        "eabps_metadata_size": e_data.get("predictor_metadata_size", 0),
+        "eabps_overhead": e_data.get("container_overhead", 0),
+        "eabps_verified": bool(e_data.get("verification", False)),
+        "baseline_compressed_size": internal_ahmc.stat().st_size if internal_ahmc.exists() else 0,
+        "baseline_ratio": round(orig_size / internal_ahmc.stat().st_size, 3) if (internal_ahmc.exists() and internal_ahmc.stat().st_size > 0) else 1.0,
     }
 
 
@@ -1152,8 +1234,11 @@ def verify_video_frames_identical(orig_path: Path, rec_path: Path, probe_orig: O
     cmd1 = [ffmpeg_bin, "-y", "-i", str(orig_path), "-pix_fmt", compare_fmt, "-f", "framemd5", "-"]
     cmd2 = [ffmpeg_bin, "-y", "-i", str(rec_path), "-pix_fmt", compare_fmt, "-f", "framemd5", "-"]
 
-    p1 = subprocess.run(cmd1, capture_output=True, text=True, timeout=60)
-    p2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(subprocess.run, cmd1, capture_output=True, text=True, timeout=60)
+        f2 = executor.submit(subprocess.run, cmd2, capture_output=True, text=True, timeout=60)
+        p1 = f1.result()
+        p2 = f2.result()
 
     if p1.returncode != 0 or p2.returncode != 0:
         return {"verified": False, "reason": f"Frame extraction failed: {p1.stderr or p2.stderr}"}
@@ -1176,8 +1261,11 @@ def verify_video_frames_identical(orig_path: Path, rec_path: Path, probe_orig: O
             return {"verified": False, "reason": "Original video contains audio track but reconstructed video has no audio"}
         acmd1 = [ffmpeg_bin, "-y", "-i", str(orig_path), "-vn", "-c:a", "pcm_s16le", "-f", "md5", "-"]
         acmd2 = [ffmpeg_bin, "-y", "-i", str(rec_path), "-vn", "-c:a", "pcm_s16le", "-f", "md5", "-"]
-        ap1 = subprocess.run(acmd1, capture_output=True, text=True, timeout=30)
-        ap2 = subprocess.run(acmd2, capture_output=True, text=True, timeout=30)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            af1 = executor.submit(subprocess.run, acmd1, capture_output=True, text=True, timeout=30)
+            af2 = executor.submit(subprocess.run, acmd2, capture_output=True, text=True, timeout=30)
+            ap1 = af1.result()
+            ap2 = af2.result()
         if ap1.returncode != 0 or ap2.returncode != 0:
             return {"verified": False, "reason": "Audio stream extraction failed"}
         if ap1.stdout.strip() != ap2.stdout.strip():
@@ -1227,29 +1315,24 @@ def calculate_adaptive_residuals_metrics(raw_bytes: bytes, total_bytes: Optional
         res_ent = calculate_entropy(residual_bytes)
 
         n = len(diff)
-        rle_size = 0
-        i = 0
-        while i < n:
-            run_len = 1
-            while i + run_len < n and diff[i + run_len] == diff[i] and run_len < 127:
-                run_len += 1
-            if run_len >= 2:
-                rle_size += 2
-                i += run_len
-            else:
-                lit_len = 1
-                while i + lit_len < n and (i + lit_len + 1 >= n or diff[i + lit_len] != diff[i + lit_len + 1]) and lit_len < 127:
-                    lit_len += 1
-                rle_size += 1 + lit_len
-                i += lit_len
+        if n > 1:
+            changes = np.flatnonzero(diff[1:] != diff[:-1]) + 1
+            lens = np.diff(np.concatenate(([0], changes, [n])))
+            runs = lens[lens >= 2]
+            lits = lens[lens < 2]
+            run_bytes = int(np.sum((runs + 126) // 127 * 2))
+            lit_total = int(len(lits))
+            lit_bytes = lit_total + int((lit_total + 126) // 127) if lit_total > 0 else 0
+            rle_size = run_bytes + lit_bytes
+        else:
+            rle_size = 2 if n == 1 else 0
 
-        counts = Counter(residual_bytes)
-        huff_bits = 0
-        for byte_val, count in counts.items():
-            p = count / n
-            bit_len = max(1, math.ceil(-math.log2(p)))
-            huff_bits += count * bit_len
-        huff_size = math.ceil(huff_bits / 8) + 256 + 16
+        counts = np.bincount(diff, minlength=256)
+        nonzero = counts[counts > 0]
+        p = nonzero / n
+        bit_lens = np.maximum(1, np.ceil(-np.log2(p)))
+        huff_bits = np.sum(nonzero * bit_lens)
+        huff_size = int(math.ceil(huff_bits / 8) + 256 + 16)
 
         scaled_rle = int(round(rle_size * scale))
         scaled_huff = int(round(huff_size * scale))
@@ -1298,9 +1381,12 @@ def run_video_teabps(input_path: Path, output_dir: Path, block_size: int = 16, m
     args = ["video-teabps-compress", str(input_path), str(teabps_ahmc), "--block-size", str(block_size), "--json"]
     if max_frames > 0:
         args.extend(["--max-frames", str(max_frames)])
-    t_res = _run(*args, timeout=180)
+    t_res = _run(*args, timeout=120)
     t_data = _parse_json(t_res) or {}
     teabps_ahmc_sz = teabps_ahmc.stat().st_size if teabps_ahmc.exists() else 0
+    if not (t_res.success and teabps_ahmc_sz > 0 and t_data.get("ok", False)):
+        teabps_ahmc.unlink(missing_ok=True)
+        teabps_ahmc_sz = 0
     return {
         "container_path": str(teabps_ahmc),
         "container_size": teabps_ahmc_sz,
@@ -1336,11 +1422,21 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
 
     # 1. Run TEABPS Video Compression Engine
     teabps_container = output_path.parent / (output_path.stem + "_teabps.ahlv")
-    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16, container_path=teabps_container)
+    frame_count = probe.get("frame_count", 0)
+    if is_raw and frame_count <= 200:
+        max_fr = 0  # Encode ALL frames for raw videos under 200 frames so AHLV contains full video
+    elif frame_count > 30:
+        max_fr = 30 # Bounded diagnostic sample for long sequences
+    else:
+        max_fr = 0
+    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16, max_frames=max_fr, container_path=teabps_container)
     t_data = teabps_info["data"]
     teabps_ahmc_sz = teabps_info["container_size"]
     raw_uncompressed_bytes = t_data.get("original_raw_bytes", est_raw_total)
-    teabps_verified = bool(t_data.get("verification", False))
+    teabps_frames_encoded = t_data.get("frame_count", 0)
+    teabps_is_full_video = (max_fr == 0 or (teabps_frames_encoded > 0 and teabps_frames_encoded >= frame_count))
+    # Strict rule: Only mark TEABPS as verified lossless if 100% of video frames were encoded in the AHLV stream
+    teabps_verified = bool(t_data.get("verification", False) and teabps_is_full_video)
 
     teabps_total_blocks = t_data.get("total_blocks", 0)
     teabps_none_count = t_data.get("count_none", 0)
@@ -1365,6 +1461,8 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
             "-c:v", "ffv1",
             "-level", "3",
             "-threads", "0",
+            "-slices", "16",
+            "-slicecrc", "1",
         ]
         if has_audio:
             args.extend(["-c:a", "copy"])
@@ -1426,8 +1524,9 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
         "-i", str(final_avi),
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
-        "-preset", "fast",
+        "-preset", "veryfast",
         "-crf", "18",
+        "-threads", "0",
         "-movflags", "+faststart",
     ]
     if has_audio:
@@ -1497,6 +1596,7 @@ def compress_avi(input_path: Path, output_path: Path) -> dict:
         "teabps_metadata_size": teabps_metadata_size,
         "teabps_overhead": teabps_overhead,
         "teabps_verified": teabps_verified,
+        "teabps_frames_encoded": teabps_frames_encoded,
         "raw_uncompressed_bytes": raw_uncompressed_bytes,
         # Common EABPS UI compatibility fields
         "eabps_compressed_size": teabps_ahmc_sz,
@@ -1548,11 +1648,16 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
 
     # 1. Run TEABPS Video Compression Engine on decoded raw frames
     teabps_container = output_path.parent / (output_path.stem + "_teabps.ahlv")
-    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16, container_path=teabps_container)
+    frame_count = probe.get("frame_count", 0)
+    max_fr = 30 if frame_count > 30 else 0
+    teabps_info = run_video_teabps(input_path, output_path.parent, block_size=16, max_frames=max_fr, container_path=teabps_container)
     t_data = teabps_info["data"]
     teabps_ahmc_sz = teabps_info["container_size"]
     raw_uncompressed_bytes = t_data.get("original_raw_bytes", est_raw_total)
-    teabps_verified = bool(t_data.get("verification", False))
+    teabps_frames_encoded = t_data.get("frame_count", 0)
+    teabps_is_full_video = (max_fr == 0 or (teabps_frames_encoded > 0 and teabps_frames_encoded >= frame_count))
+    # Strict rule: Only mark TEABPS as verified lossless if 100% of video frames were encoded in the AHLV stream
+    teabps_verified = bool(t_data.get("verification", False) and teabps_is_full_video)
 
     teabps_total_blocks = t_data.get("total_blocks", 0)
     teabps_none_count = t_data.get("count_none", 0)
@@ -1630,6 +1735,7 @@ def compress_mp4(input_path: Path, output_path: Path) -> dict:
             "teabps_metadata_size": teabps_metadata_size,
             "teabps_overhead": teabps_overhead,
             "teabps_verified": teabps_verified,
+            "teabps_frames_encoded": teabps_frames_encoded,
             "raw_uncompressed_bytes": raw_uncompressed_bytes,
             # Common EABPS UI compatibility fields
             "eabps_compressed_size": teabps_ahmc_sz,

@@ -127,9 +127,19 @@ test_*.flac
 test_*.png
 test_*.ahlv
 
-# Audit & experiment reports
+# Audit, debugging & performance reports
 result.md
 result_*.md
+debugging_findings*.md
+performance*.md
+perfromace*.md
+summary*.md
+test_results/
+
+# Temporary standalone binaries and test artifacts
+ahmc.rle
+ahmc_restored.exe
+*.rle
 
 
 # Scratch directory (ignore all generated artifacts, keep Python test scripts)

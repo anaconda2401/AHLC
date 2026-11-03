@@ -89,8 +89,17 @@ bool read_wav(const std::string& path, AudioBuffer& audio)
             if (!got_fmt) {
                 std::cerr << "WAV: data chunk before fmt chunk.\n"; return false;
             }
+            if (audio.block_align() == 0) {
+                std::cerr << "WAV: invalid block align (zero).\n"; return false;
+            }
+            if (csz > 512 * 1024 * 1024) {
+                std::cerr << "WAV: data chunk exceeds maximum 512MB limit.\n"; return false;
+            }
             audio.pcm.resize(csz);
             f.read(reinterpret_cast<char*>(audio.pcm.data()), csz);
+            if (static_cast<uint32_t>(f.gcount()) != csz) {
+                std::cerr << "WAV: truncated data chunk.\n"; return false;
+            }
             audio.total_samples = csz / audio.block_align();
             got_data = true;
             // (don't need to read further)

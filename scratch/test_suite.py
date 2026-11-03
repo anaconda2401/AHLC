@@ -16,7 +16,7 @@ from pathlib import Path
 from PIL import Image
 
 # Setup paths
-PROJECT_ROOT = Path(r"d:\projects\compression\AHLC").resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "flask_app"))
 
 import ahmc_runner as runner
@@ -54,19 +54,21 @@ def test_suite():
     assert out_good.exists(), "Output file does not exist!"
 
     actual_orig = bmp_good_in.stat().st_size
-    actual_out = out_good.stat().st_size
+    comp_file = Path(res_good["compressed_path"])
+    actual_out = comp_file.stat().st_size
     assert res_good["original_size"] == actual_orig, "Original size mismatch!"
     assert res_good["compressed_size"] == actual_out, "Output size mismatch!"
     assert actual_out < actual_orig, f"Expected size reduction! {actual_out} vs {actual_orig}"
     assert res_good["bytes_saved"] == (actual_orig - actual_out), "Bytes saved mismatch!"
 
     # Verify output opens as a valid image
-    with Image.open(out_good) as im_chk:
+    rec_file = Path(res_good["recovered_path"])
+    with Image.open(rec_file) as im_chk:
         assert im_chk.format == "BMP", "Output is not valid BMP!"
         assert im_chk.size == (64, 64), "Dimensions mismatch!"
 
     # Verify pixels identical
-    assert runner.verify_pixels_identical(bmp_good_in, out_good), "Pixels not identical!"
+    assert runner.verify_pixels_identical(bmp_good_in, rec_file), "Pixels not identical!"
     print(f" [PASS] BMP (Good Compression): {actual_orig} B -> {actual_out} B | Saved: {res_good['bytes_saved']} B ({res_good['space_saved_percent']:.2f}%) | Ratio: {res_good['compression_ratio']:.2f}x")
     print(f"        Method: {res_good['method']}")
     print(f"        Verification: {res_good['verification_label']}")
@@ -91,19 +93,19 @@ def test_suite():
     assert res_hard["ok"], f"Compression failed: {res_hard.get('error')}"
     assert res_hard["format"] == "BMP"
     assert res_hard["verification"], "Lossless verification failed!"
-    assert out_hard.exists(), "Output file does not exist!"
 
     actual_orig_h = bmp_hard_in.stat().st_size
-    actual_out_h = out_hard.stat().st_size
+    actual_out_h = Path(res_hard["compressed_path"]).stat().st_size
     assert res_hard["original_size"] == actual_orig_h
     assert res_hard["compressed_size"] == actual_out_h
 
     # Verify output opens as a valid image
-    with Image.open(out_hard) as im_chk:
+    rec_hard = Path(res_hard["recovered_path"])
+    with Image.open(rec_hard) as im_chk:
         assert im_chk.format == "BMP"
         assert im_chk.size == (32, 32)
 
-    assert runner.verify_pixels_identical(bmp_hard_in, out_hard)
+    assert runner.verify_pixels_identical(bmp_hard_in, rec_hard)
     print(f" [PASS] BMP (No Reduction): {actual_orig_h} B -> {actual_out_h} B | Saved: {res_hard['bytes_saved']} B ({res_hard['space_saved_percent']:.2f}%) | Ratio: {res_hard['compression_ratio']:.2f}x")
     print(f"        Method: {res_hard['method']}")
     print(f"        Verification: {res_hard['verification_label']}")

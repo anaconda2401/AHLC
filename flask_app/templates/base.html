@@ -7,13 +7,18 @@
   <meta name="description" content="AHLC: Adaptive Hybrid Lossless Compression. Lossless compression and recovery for BMP, PNG, WAV, FLAC, AVI, and MP4."/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
   <script>
-    // Apply saved theme immediately to avoid flash
+    // Apply saved theme immediately to avoid flash of unstyled theme
     (function(){
-      const t = localStorage.getItem('ahlc-theme') || 'dark';
-      document.documentElement.setAttribute('data-theme', t);
+      let t = localStorage.getItem('ahlc-theme');
+      if (t === 'light' && !localStorage.getItem('ahlc-gradient-v2')) {
+        t = 'dark';
+        localStorage.setItem('ahlc-theme', 'dark');
+        localStorage.setItem('ahlc-gradient-v2', '1');
+      }
+      document.documentElement.setAttribute('data-theme', t || 'dark');
     })();
   </script>
   {% block head %}{% endblock %}
@@ -24,10 +29,16 @@
 <aside class="sidebar">
   <div class="sidebar-logo">
     <div class="logo-mark">
-      <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-        <rect width="32" height="32" rx="7" fill="var(--accent)"/>
+      <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+        <defs>
+          <linearGradient id="ahlc-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="var(--accent)"/>
+            <stop offset="100%" stop-color="var(--accent-secondary)"/>
+          </linearGradient>
+        </defs>
+        <rect width="32" height="32" rx="7" fill="url(#ahlc-logo-grad)"/>
         <path d="M8 22 L16 10 L24 22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M11 18 L16 10 L21 18" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+        <path d="M11 18 L16 10 L21 18" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
       </svg>
     </div>
     <div>
@@ -52,9 +63,9 @@
   </nav>
 
   <div class="sidebar-footer">
-    <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode">
-      <span class="theme-toggle-icon">☀</span>
-      <span class="theme-toggle-label">Light mode</span>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle theme style">
+      <span class="theme-toggle-icon">◐</span>
+      <span class="theme-toggle-label">Soft Theme</span>
     </button>
     <div class="sidebar-status">
       <span class="badge-dot"></span>
@@ -72,12 +83,15 @@
   <div class="flash-container">
     {% for cat, msg in msgs %}
     <div class="flash flash-{{ cat }}">
-      {% if cat == 'error' %}
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      {% else %}
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      {% endif %}
-      {{ msg }}
+      <div class="flash-content">
+        {% if cat == 'error' %}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        {% else %}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        {% endif %}
+        <span>{{ msg }}</span>
+      </div>
+      <button type="button" class="flash-close" onclick="this.closest('.flash').remove()" aria-label="Dismiss">&times;</button>
     </div>
     {% endfor %}
   </div>

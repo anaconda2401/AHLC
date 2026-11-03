@@ -1,11 +1,16 @@
-/* dashboard.js — AHLC Dashboard interactivity */
+/* dashboard.js — AHLC Dashboard Interactivity & UX Polish */
 
 // ================================================================
 // Theme: light / dark, persisted in localStorage
 // ================================================================
 (function () {
-  const saved = localStorage.getItem('ahlc-theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
+  let saved = localStorage.getItem('ahlc-theme');
+  if (saved === 'light' && !localStorage.getItem('ahlc-gradient-v2')) {
+    saved = 'dark';
+    localStorage.setItem('ahlc-theme', 'dark');
+    localStorage.setItem('ahlc-gradient-v2', '1');
+  }
+  document.documentElement.setAttribute('data-theme', saved || 'dark');
 })();
 
 function initThemeToggle() {
@@ -15,14 +20,15 @@ function initThemeToggle() {
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('ahlc-theme', theme);
+    localStorage.setItem('ahlc-gradient-v2', '1');
     const icon = btn.querySelector('.theme-toggle-icon');
     const label = btn.querySelector('.theme-toggle-label');
     if (theme === 'dark') {
-      if (icon)  icon.textContent = '☀';
-      if (label) label.textContent = 'Light mode';
+      if (icon)  icon.textContent = '◐';
+      if (label) label.textContent = 'Soft Theme';
     } else {
-      if (icon)  icon.textContent = '☾';
-      if (label) label.textContent = 'Dark mode';
+      if (icon)  icon.textContent = '◑';
+      if (label) label.textContent = 'Deep Theme';
     }
     // Update chart colors if charts exist
     updateChartTheme(theme);
@@ -42,11 +48,12 @@ function initThemeToggle() {
 function updateChartTheme(theme) {
   if (typeof Chart === 'undefined') return;
   const isDark = theme === 'dark';
-  const textColor  = isDark ? '#7a8394' : '#6b7385';
-  const gridColor  = isDark ? 'rgba(45,50,64,0.6)' : 'rgba(200,205,215,0.5)';
+  const textColor = isDark ? '#708e9e' : '#476675';
+  const gridColor = isDark ? 'rgba(48, 104, 128, 0.35)' : 'rgba(35, 88, 112, 0.22)';
   Chart.defaults.color = textColor;
   Chart.defaults.scale = Chart.defaults.scale || {};
-  // Update all registered charts
+
+  // Update all registered chart instances
   if (Chart.instances) {
     Object.values(Chart.instances).forEach(chart => {
       if (chart.options && chart.options.scales) {
@@ -63,49 +70,75 @@ function updateChartTheme(theme) {
 // ================================================================
 // Drop-zone helper (reused on dashboard and analyze pages)
 // ================================================================
-function setupDropZone(zoneId, inputId, nameId, selectedId) {
+function setupDropZone(zoneId, inputId, nameId, selectedId, submitBtnId) {
   const zone  = document.getElementById(zoneId);
   const input = document.getElementById(inputId);
   const nameEl = document.getElementById(nameId);
   const selEl  = document.getElementById(selectedId);
+  const submitBtn = submitBtnId ? document.getElementById(submitBtnId) : document.getElementById('compress-btn');
   if (!zone || !input) return;
 
   function showFile(file) {
     if (!file) return;
     if (nameEl) nameEl.textContent = `${file.name} (${formatBytes(file.size)})`;
-    if (selEl)  selEl.style.display = 'flex';
-    zone.classList.add('drag-over');
-    const btn = document.getElementById('compress-btn');
-    if (btn) btn.disabled = false;
+    if (selEl) {
+      selEl.style.display = 'flex';
+    }
+    zone.classList.remove('drag-over');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+    }
   }
 
-  input.addEventListener('change', () => { if (input.files[0]) showFile(input.files[0]); });
+  input.addEventListener('change', () => {
+    if (input.files && input.files[0]) {
+      showFile(input.files[0]);
+    }
+  });
 
   zone.addEventListener('click', (e) => {
-    if (e.target.tagName === 'BUTTON') return;
+    if (e.target.tagName === 'BUTTON' || e.target.classList.contains('upload-browse')) return;
     input.click();
+  });
+
+  let dragCounter = 0;
+
+  zone.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    zone.classList.add('drag-over');
   });
 
   zone.addEventListener('dragover', (e) => {
     e.preventDefault();
-    zone.classList.add('drag-over');
   });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+
+  zone.addEventListener('dragleave', () => {
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      zone.classList.remove('drag-over');
+    }
+  });
+
   zone.addEventListener('drop', (e) => {
     e.preventDefault();
+    dragCounter = 0;
+    zone.classList.remove('drag-over');
+
     const file = e.dataTransfer.files[0];
     if (!file) return;
+
     const ext = file.name.split('.').pop().toLowerCase();
     if (!['bmp','png','wav','flac','avi','mp4'].includes(ext)) {
       alert('Unsupported format. Please upload a .bmp, .png, .wav, .flac, .avi, or .mp4 file.');
-      zone.classList.remove('drag-over');
       return;
     }
     if (['avi', 'mp4'].includes(ext) && file.size > 50 * 1024 * 1024) {
       alert('Video file exceeds the 50 MB demo limit (' + (file.size / (1024*1024)).toFixed(1) + ' MB). Please choose a video under 50 MB.');
-      zone.classList.remove('drag-over');
       return;
     }
+
     const dt = new DataTransfer();
     dt.items.add(file);
     input.files = dt.files;
@@ -114,7 +147,7 @@ function setupDropZone(zoneId, inputId, nameId, selectedId) {
 }
 
 // ================================================================
-// Dashboard upload form: progress animation
+// Dashboard upload form: progress animation & smooth submission
 // ================================================================
 function setupCompressForm() {
   const form    = document.getElementById('compress-form');
@@ -124,7 +157,11 @@ function setupCompressForm() {
 
   form.addEventListener('submit', (e) => {
     const input = document.getElementById('file-input');
-    if (!input || !input.files[0]) { e.preventDefault(); return; }
+    if (!input || !input.files[0]) {
+      e.preventDefault();
+      alert('Please select a file to compress.');
+      return;
+    }
 
     const ext = input.files[0].name.split('.').pop().toLowerCase();
     if (!['bmp','png','wav','flac','avi','mp4'].includes(ext)) {
@@ -139,17 +176,23 @@ function setupCompressForm() {
     }
 
     const btn = document.getElementById('compress-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="16"/></svg> Processing…';
+    }
     if (progBar) progBar.style.display = 'block';
 
     const steps = ['step-upload', 'step-analyze', 'step-process', 'step-verify', 'step-complete'];
-    const durations = [200, 350, 700, 450, 300];
+    const durations = [220, 380, 750, 480, 320];
     let idx = 0;
     function nextStep() {
       if (idx < steps.length) {
         if (idx > 0) {
           const prevEl = document.getElementById(steps[idx - 1]);
-          if (prevEl) { prevEl.classList.remove('active'); prevEl.classList.add('done'); }
+          if (prevEl) {
+            prevEl.classList.remove('active');
+            prevEl.classList.add('done');
+          }
         }
         const el = document.getElementById(steps[idx]);
         if (el) el.classList.add('active');
@@ -164,14 +207,51 @@ function setupCompressForm() {
 }
 
 // ================================================================
-// Auto-dismiss flash messages after 6 s
+// Analyze form smooth submission
+// ================================================================
+function setupAnalyzeForm() {
+  const form = document.querySelector('form[action*="analyze"]');
+  if (!form) return;
+
+  form.addEventListener('submit', (e) => {
+    const input = document.getElementById('file-input-analyze');
+    if (!input || !input.files[0]) {
+      e.preventDefault();
+      alert('Please select a file to analyze.');
+      return;
+    }
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="16"/></svg> Analyzing…';
+    }
+  });
+}
+
+// Keyframe spin injection for buttons
+(function injectKeyframes() {
+  const style = document.createElement('style');
+  style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+  document.head.appendChild(style);
+})();
+
+// ================================================================
+// Auto-dismiss flash messages smoothly
 // ================================================================
 function autoDismissFlash() {
-  document.querySelectorAll('.flash').forEach(el => setTimeout(() => {
-    el.style.transition = 'opacity 0.4s';
-    el.style.opacity = '0';
-    setTimeout(() => el.remove(), 400);
-  }, 6000));
+  document.querySelectorAll('.flash').forEach(el => {
+    setTimeout(() => {
+      el.style.transition = 'opacity 0.35s ease, transform 0.35s ease, max-height 0.3s ease, margin 0.3s ease, padding 0.3s ease';
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(-6px)';
+      setTimeout(() => {
+        el.style.maxHeight = '0px';
+        el.style.margin = '0px';
+        el.style.padding = '0px';
+        setTimeout(() => el.remove(), 300);
+      }, 350);
+    }, 6000);
+  });
 }
 
 // ================================================================
@@ -190,9 +270,14 @@ function formatBytes(n) {
 // ================================================================
 document.addEventListener('DOMContentLoaded', () => {
   initThemeToggle();
-  setupDropZone('drop-zone', 'file-input', 'file-name', 'file-selected');
+  // Setup dashboard dropzone
+  setupDropZone('drop-zone', 'file-input', 'file-name', 'file-selected', 'compress-btn');
+  // Setup analyze page dropzone
+  setupDropZone('drop-zone-analyze', 'file-input-analyze', 'file-name-analyze', 'file-selected-analyze', 'analyze-btn');
   setupCompressForm();
+  setupAnalyzeForm();
   autoDismissFlash();
+
   // Apply chart theme after load
   const current = localStorage.getItem('ahlc-theme') || 'dark';
   updateChartTheme(current);

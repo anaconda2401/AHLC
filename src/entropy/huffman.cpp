@@ -339,6 +339,19 @@ static bool decompress_core(const uint8_t*        input,
     // Trivial case: empty original file.
     if (orig_size == 0) return true;
 
+    // Safety checks: allocation limit and payload bounds
+    constexpr uint32_t MAX_DECOMPRESS_SIZE = 512 * 1024 * 1024; // 512 MB
+    if (orig_size > MAX_DECOMPRESS_SIZE) {
+        std::cerr << "Huffman: declared decompressed size exceeds safety limit.\n";
+        return false;
+    }
+
+    uint64_t needed_bytes = (static_cast<uint64_t>(bit_count) + 7) / 8;
+    if (static_cast<uint64_t>(in_size - HDR) < needed_bytes) {
+        std::cerr << "Huffman: truncated bitstream payload.\n";
+        return false;
+    }
+
     // Build canonical decode table.
     DecodeTable dt;
     build_decode_table(lengths, dt);

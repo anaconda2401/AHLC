@@ -850,29 +850,35 @@ int main(int argc, char* argv[])
         std::string mf_str = get_option_val(argc, argv, "--max-frames", "0");
         uint32_t max_fr = static_cast<uint32_t>(std::atoi(mf_str.c_str()));
 
+        ahlc::RawYUVSequence orig;
+        if (!ahlc::decode_video_to_yuv_sequence(argv[2], orig, max_fr)) {
+            if (jm) std::cout << "{\"ok\":false,\"error\":\"Video TEABPS decode failed\"}\n";
+            return 1;
+        }
+
         ahlc::VideoTEABPSCompressStats s;
-        if (!ahlc::compress_video_file_teabps(argv[2], argv[3], s, bsize, max_fr)) {
+        {
+            std::ifstream sf(argv[2], std::ios::binary | std::ios::ate);
+            if (sf) s.original_file_size = static_cast<uint64_t>(sf.tellg());
+        }
+
+        if (!ahlc::compress_video_teabps(orig, argv[3], s, bsize)) {
             if (jm) std::cout << "{\"ok\":false,\"error\":\"Video TEABPS compression failed\"}\n";
             return 1;
         }
+
+        ahlc::RawYUVSequence rec;
+        bool verified = false;
+        if (ahlc::decompress_video_teabps(argv[3], rec)) {
+            verified = ahlc::yuv_sequences_equal(orig, rec);
+        }
+
         if (jm) {
-            ahlc::RawYUVSequence orig, rec;
-            bool verified = false;
-            if (ahlc::decompress_video_teabps(argv[3], rec)) {
-                if (ahlc::decode_video_to_yuv_sequence(argv[2], orig, max_fr))
-                    verified = ahlc::yuv_sequences_equal(orig, rec);
-            }
             print_video_teabps_json(s, verified);
         } else {
             ahlc::print_video_teabps_stats(argv[2], argv[3], s);
-            ahlc::RawYUVSequence orig, rec;
-            if (ahlc::decompress_video_teabps(argv[3], rec)) {
-                if (ahlc::decode_video_to_yuv_sequence(argv[2], orig, max_fr)) {
-                    bool ok = ahlc::yuv_sequences_equal(orig, rec);
-                    std::cout << " Lossless frame verification: " << (ok ? "PASS" : "FAIL") << "\n";
-                    std::cout << "--------------------------------------------\n";
-                }
-            }
+            std::cout << " Lossless frame verification: " << (verified ? "PASS" : "FAIL") << "\n";
+            std::cout << "--------------------------------------------\n";
         }
         return 0;
     }

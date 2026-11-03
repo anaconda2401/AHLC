@@ -77,12 +77,12 @@
   </div>
 
   {% if is_video and (exp.selected_codec == 'ffv1' or ext == 'AVI') %}
-  <div style="margin-top:12px;padding:12px 16px;border-radius:8px;background:rgba(227,179,65,0.08);border:1px solid rgba(227,179,65,0.3);line-height:1.5">
-    <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:#e3b341;margin-bottom:4px">
+  <div style="margin-top:12px;padding:12px 16px;border-radius:8px;background:var(--yellow-dim);border:1px solid rgba(207,160,54,0.35);backdrop-filter:var(--surface-blur);line-height:1.5">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--yellow);margin-bottom:4px">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       Playback &amp; Player Compatibility Notice
     </div>
-    <div style="font-size:0.875rem;color:var(--text-muted, #8b949e)">
+    <div style="font-size:0.875rem;color:var(--muted)">
       The lossless master file is encoded with <strong>FFV1</strong> (RFC 9043 archival codec) guaranteeing 100% bit-exact frame reconstruction. Standard Windows Media Player does not include an FFV1 decoder by default and displays a format error.
       <div style="margin-top:6px">
         &bull; <strong>For Windows Media Player, browsers, and mobile:</strong> Click <strong>Playable Video (.mp4)</strong> above.<br>
@@ -194,10 +194,10 @@
     {% endif %}
 
     {% if exp.eabps_total_blocks and exp.eabps_total_blocks > 0 %}
-    <div class="info-card" style="border:1px solid rgba(46,184,138,0.25)">
+    <div class="info-card" style="border:1px solid var(--border-glow)">
       <div class="info-card-title" style="display:flex;justify-content:space-between;align-items:center">
         <span>{% if is_video %}TEABPS Video Block Compression{% else %}EABPS Block Compression{% endif %}</span>
-        <span class="badge" style="background:rgba(46,184,138,0.15);color:var(--accent);font-size:0.75rem">{% if is_video %}AHLV v3{% else %}AHMC v3{% endif %}</span>
+        <span class="badge" style="background:var(--accent-dim);color:var(--accent);font-size:0.75rem">{% if is_video %}AHLV v3{% else %}AHMC v3{% endif %}</span>
       </div>
       <div class="info-rows">
         <div class="info-row"><span>Algorithm</span><span class="mono">{% if is_video %}TEABPS (Temporal Entropy-Aware Block Selection){% else %}EABPS (Entropy-Aware Block Selection){% endif %}</span></div>
@@ -286,8 +286,8 @@
 {% block scripts %}
 <script>
 const isDark = () => document.documentElement.getAttribute('data-theme') !== 'light';
-function gridColor()  { return isDark() ? 'rgba(45,50,64,0.6)' : 'rgba(200,205,215,0.5)'; }
-function textColor()  { return isDark() ? '#7a8394' : '#6b7385'; }
+function gridColor()  { return isDark() ? 'rgba(48, 104, 128, 0.35)' : 'rgba(35, 88, 112, 0.22)'; }
+function textColor()  { return isDark() ? '#708e9e' : '#476675'; }
 
 Chart.defaults.font.family = "'Inter', sans-serif";
 
@@ -298,7 +298,7 @@ function barChart(id, labels, values, colors) {
     type: 'bar',
     data: {
       labels,
-      datasets: [{ data: values, backgroundColor: colors, borderRadius: 4, maxBarThickness: 52 }]
+      datasets: [{ data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 54 }]
     },
     options: {
       responsive: true,
@@ -311,9 +311,11 @@ function barChart(id, labels, values, colors) {
   });
 }
 
-const accent     = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2eb88a';
-const muted      = getComputedStyle(document.documentElement).getPropertyValue('--bg3').trim()   || '#20242f';
-const yellow     = '#c59b3a';
+const cs = getComputedStyle(document.documentElement);
+const accent = cs.getPropertyValue('--accent').trim() || '#1e88ab';
+const secondary = cs.getPropertyValue('--accent-secondary').trim() || '#4e8f69';
+const muted = cs.getPropertyValue('--bg3').trim() || 'rgba(18, 43, 56, 0.65)';
+const yellow = cs.getPropertyValue('--yellow').trim() || '#cfa036';
 const isRetained = {{ 'true' if is_retained else 'false' }};
 
 barChart('sizeChart',
@@ -326,7 +328,7 @@ barChart('sizeChart',
 barChart('codecChart',
   ['RLE Candidate', 'Huffman Candidate', '{{ 'Retained Original' if is_retained else 'Chosen Output' }}'],
   [{{ exp.rle_size or 0 }}, {{ exp.huffman_size or 0 }}, {{ exp.compressed_size or 0 }}],
-  ['#7c74c4', '#4b8ecb', isRetained ? yellow : accent]
+  ['#206f8a', secondary, isRetained ? yellow : accent]
 );
 {% endif %}
 </script>

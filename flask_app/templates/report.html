@@ -182,7 +182,7 @@
       {% if is_retained %}
       <div class="info-rows">
         <div class="info-row"><span>Selected Action</span>
-          <span class="codec-badge" style="background:rgba(227,179,65,0.2);color:#e3b341;border:1px solid #e3b341">ORIGINAL RETAINED (FALLBACK)</span></div>
+          <span class="codec-badge" class="codec-badge badge-original">ORIGINAL RETAINED (FALLBACK)</span></div>
         <div class="info-row"><span>Selection Reason</span>
           <span class="mono">{{ exp.fallback_reason or 'No size reduction (all candidate representations larger than input)' }}</span></div>
         <div class="info-row"><span>Evaluated Candidate Codec</span>
@@ -212,7 +212,7 @@
           </div>
         </div>
         <div class="pipeline-arrow">↓ all candidates &gt; input size</div>
-        <div class="pipeline-node pipeline-winner" style="border-color:#e3b341">Fallback Action<br><small>Original Retained ({{ fmt_bytes(exp.compressed_size) }})</small></div>
+        <div class="pipeline-node pipeline-winner" style="border-color:var(--yellow);color:var(--yellow);background:var(--yellow-dim)">Fallback Action<br><small>Original Retained ({{ fmt_bytes(exp.compressed_size) }})</small></div>
         <div class="pipeline-arrow">↓ verify identity</div>
         <div class="pipeline-node {% if exp.verification %}pipeline-pass{% else %}pipeline-fail{% endif %}">
           Verification<br><small>{% if exp.verification %}✓ PASS — identical{% else %}✗ FAIL — mismatch{% endif %}</small>

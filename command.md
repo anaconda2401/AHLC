@@ -1,6 +1,5 @@
 # ============================================================
 # AHLC — Build, Test & Deployment Command Reference
-# Project root: D:\projects\compression\AHLC
 # ============================================================
 
 
@@ -8,61 +7,57 @@
 # SECTION 1 — BUILD (C++ Engine)
 # ============================================================
 
-# Working directory for all C++ commands:
-#   cd D:\projects\compression\AHLC
+# Quick Build (Automated):
+#   Windows: .\build.bat  or  .\build.ps1
 
-# 1a. Generate CMake build system with vcpkg toolchain (run once, or after CMakeLists.txt changes)
-E:\Programs\VisualStudio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe -S . -B build -DCMAKE_TOOLCHAIN_FILE="E:\Programs\vcpkg-ahcl\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+# Manual CMake Build:
+# 1a. Configure CMake with vcpkg toolchain
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+
+# PowerShell equivalent:
+# cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 
 # 1b. Compile the Release binary
-E:\Programs\VisualStudio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe --build build --config Release
+cmake --build build --config Release
 
-# Output: D:\projects\compression\AHLC\build\Release\ahmc.exe
+# Output binary location:
+#   Windows: build\Release\ahmc.exe (or build\ahmc.exe)
+#   Linux/macOS: build/ahmc
 
 
 # ============================================================
 # SECTION 2 — REGRESSION TEST SUITE
-# Run all suites after every build to confirm nothing is broken.
-# Expected result: ALL PASS on every suite.
+# Run all suites after building to confirm complete compliance.
 # ============================================================
 
-# 2a. Bit-level I/O (BitWriter / BitReader round-trip)
-.\build\Release\ahmc.exe bitio-test
+# One-Click Test Runner:
+#   .\test.bat  or  .\test.ps1
 
-# 2b. RLE compression / decompression (7 test cases)
-.\build\Release\ahmc.exe rle-test
-
-# 2c. Canonical Huffman encoder / decoder (10 test cases)
-.\build\Release\ahmc.exe huffman-test
-
-# 2d. BMP image round-trip (7 synthetic images)
-.\build\Release\ahmc.exe image-test
-
-# 2e. BMP adaptive codec selection + verification
-.\build\Release\ahmc.exe image-adaptive-test
-
-# 2f. WAV audio round-trip (7 synthetic signals)
-.\build\Release\ahmc.exe audio-test
-
-# 2g. WAV adaptive codec selection + verification
-.\build\Release\ahmc.exe audio-adaptive-test
-
-# 2h. FFmpeg library integration test
-.\build\Release\ahmc.exe ffmpeg-test
-
-# 2i. Format abstraction layer test
-.\build\Release\ahmc.exe format-test
-
-# 2j. Python Automated Regression Suites (BMP, PNG, WAV, FLAC, AVI, MP4)
-.\.venv\Scripts\python.exe scratch\test_suite.py
-.\.venv\Scripts\python.exe scratch\test_audio_suite.py
-.\.venv\Scripts\python.exe scratch\test_video_suite.py
+# Master Test Runner (all 6 phases):
 .\.venv\Scripts\python.exe scratch\run_all_tests.py
+
+# Individual C++ Unit Tests:
+.\build\Release\ahmc.exe bitio-test             # BitWriter / BitReader round-trip
+.\build\Release\ahmc.exe rle-test               # RLE compression & decompression
+.\build\Release\ahmc.exe huffman-test           # Canonical Huffman encoder & decoder
+.\build\Release\ahmc.exe image-test             # BMP image round-trip
+.\build\Release\ahmc.exe image-adaptive-test    # BMP adaptive codec selection
+.\build\Release\ahmc.exe image-eabps-test       # BMP EABPS block evaluation
+.\build\Release\ahmc.exe audio-test             # WAV audio round-trip
+.\build\Release\ahmc.exe audio-adaptive-test    # WAV adaptive codec selection
+.\build\Release\ahmc.exe audio-eabps-test       # WAV EABPS block evaluation
+.\build\Release\ahmc.exe video-teabps-test      # Video TEABPS planar YUV suite
+.\build\Release\ahmc.exe ffmpeg-test            # FFmpeg library integration
+.\build\Release\ahmc.exe format-test            # Format abstraction layer
+
+# Individual Python Test Suites:
+.\.venv\Scripts\python.exe scratch\test_suite.py        # BMP & PNG image suite
+.\.venv\Scripts\python.exe scratch\test_audio_suite.py  # WAV & FLAC audio suite
+.\.venv\Scripts\python.exe scratch\test_video_suite.py  # AVI & MP4 video suite
 
 
 # ============================================================
 # SECTION 3 — IMAGE WORKFLOW (BMP)
-# Replace sample.bmp with your actual file path.
 # ============================================================
 
 # 3a. Analyze a BMP — entropy, dimensions, unique bytes
@@ -79,19 +74,14 @@ E:\Programs\VisualStudio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\
 
 # 3e. Verify pixel-exact lossless reconstruction
 .\build\Release\ahmc.exe image-verify .\sample.bmp .\sample_recovered.bmp
-# Expected output: Lossless verification: PASS
 
-# 3f. Compare RLE vs Huffman on any file
-.\build\Release\ahmc.exe entropy-compare .\sample.bmp
-
-# 3g. Machine-readable JSON output (used by Flask dashboard)
-.\build\Release\ahmc.exe image-analyze  .\sample.bmp  --json
-.\build\Release\ahmc.exe image-compress .\sample.bmp .\sample.ahmc --json
+# 3f. EABPS Block-wise compression
+.\build\Release\ahmc.exe image-eabps-compress .\sample.bmp .\sample_eabps.ahmc --block-size 16 --json
+.\build\Release\ahmc.exe image-eabps-decompress .\sample_eabps.ahmc .\sample_eabps_rec.bmp
 
 
 # ============================================================
 # SECTION 4 — AUDIO WORKFLOW (WAV PCM)
-# Replace sample.wav with your actual file path.
 # ============================================================
 
 # 4a. Analyze a WAV — entropy, channels, sample rate, duration
@@ -108,130 +98,73 @@ E:\Programs\VisualStudio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\
 
 # 4e. Verify sample-exact lossless reconstruction
 .\build\Release\ahmc.exe audio-verify .\sample.wav .\sample_recovered.wav
-# Expected output: Lossless verification: PASS
 
-# 4f. Machine-readable JSON output
-.\build\Release\ahmc.exe audio-analyze  .\sample.wav --json
-.\build\Release\ahmc.exe audio-compress .\sample.wav .\sample.ahmc --json
-
-
-# ============================================================
-# SECTION 5 — RLE STANDALONE (any binary file)
-# ============================================================
-
-.\build\Release\ahmc.exe rle-compress   .\input.bin .\input.rle
-.\build\Release\ahmc.exe rle-decompress .\input.rle .\input_recovered.bin
-.\build\Release\ahmc.exe rle-verify     .\input.bin .\input_recovered.bin
+# 4f. Audio EABPS Block-wise compression
+.\build\Release\ahmc.exe audio-eabps-compress .\sample.wav .\sample_audio_eabps.ahmc --block-size 1024 --json
+.\build\Release\ahmc.exe audio-eabps-decompress .\sample_audio_eabps.ahmc .\sample_audio_rec.wav
 
 
 # ============================================================
-# SECTION 6 — HUFFMAN STANDALONE (any binary file)
+# SECTION 5 — VIDEO WORKFLOW (AVI & MP4)
 # ============================================================
 
-.\build\Release\ahmc.exe huffman-compress   .\input.bin .\input.huff
-.\build\Release\ahmc.exe huffman-decompress .\input.huff .\input_recovered.bin
-.\build\Release\ahmc.exe huffman-verify     .\input.bin .\input_recovered.bin
-
-
-# ============================================================
-# SECTION 7 — GENERIC BINARY ANALYZER
-# ============================================================
-
-# Analyze any file (byte frequency, Shannon entropy, most-frequent byte)
-.\build\Release\ahmc.exe analyze .\build\Release\ahmc.exe
-.\build\Release\ahmc.exe analyze .\sample.bmp
-.\build\Release\ahmc.exe analyze .\sample.wav
-
-
-# ============================================================
-# SECTION 8 — FLASK DASHBOARD (Python)
-# Working directory: D:\projects\compression\AHLC
-# ============================================================
-
-# 8a. Create virtual environment (first time only)
-python -m venv .venv
-
-# 8b. Install Python dependencies (first time only)
-.\.venv\Scripts\pip install -r requirements.txt
-
-# 8c. Start the dashboard
-.\.venv\Scripts\python.exe flask_app\app.py
-# Dashboard URL: http://127.0.0.1:5000
-
-# 8d. Alternative: set environment variable and run
-$env:FLASK_APP = "flask_app/app.py"; .\.venv\Scripts\python.exe -m flask run
-
-
-# ============================================================
-# SECTION 9 — FLASK DASHBOARD PAGES
-# ============================================================
-
-# Main dashboard (stats + upload)
-# http://127.0.0.1:5000/
-
-# Analyze a file without compressing
-# http://127.0.0.1:5000/analyze
-
-# View all past experiments
-# http://127.0.0.1:5000/history
-
-# View result for experiment ID 1
-# http://127.0.0.1:5000/result/1
-
-# View full 9-section research report for experiment ID 1
-# http://127.0.0.1:5000/report/1
-
-# Download valid compressed file (.bmp, .png, .wav, .flac, .avi, or .mp4) for experiment ID 1
-# http://127.0.0.1:5000/download/1
-
-
-# ============================================================
-# SECTION 10 — VIDEO WORKFLOW (AVI & MP4)
-# Demonstrates FFmpeg integration, candidate codecs, and frame verification.
-# ============================================================
-
-# 10a. Probe video container, streams, resolution, fps, and audio tracks
+# 5a. Probe video container, streams, resolution, fps, audio
 ffprobe -v quiet -print_format json -show_format -show_streams .\sample.avi
 ffprobe -v quiet -print_format json -show_format -show_streams .\sample.mp4
 
-# 10b. Compress uncompressed AVI to lossless FFV1 with audio copy
-ffmpeg -y -i .\sample.avi -c:v ffv1 -level 3 -c:a copy .\sample_lossless.avi
+# 5b. Video TEABPS multi-threaded block compression (AHLV container)
+.\build\Release\ahmc.exe video-teabps-compress .\sample.avi .\sample.ahlv --block-size 16 --json
+.\build\Release\ahmc.exe video-teabps-decompress .\sample.ahlv .\sample_rec.yuv
 
-# 10c. Extract decoded raw pixel frames for bit-level verification
-ffmpeg -y -i .\sample.avi -f rawvideo -pix_fmt bgr24 .\raw_orig.bin
-ffmpeg -y -i .\sample_lossless.avi -f rawvideo -pix_fmt bgr24 .\raw_rec.bin
-
-# 10d. Verify exact byte-level identity of decoded frames
-fc /b .\raw_orig.bin .\raw_rec.bin
-# Expected output: FC: no differences encountered
-
-# 10e. Run full 10-requirement automated video test suite
-.\.venv\Scripts\python.exe scratch\test_video_suite.py
+# 5c. Fast zero-disk streaming frame verification via framemd5
+ffmpeg -v quiet -i .\sample.avi -pix_fmt bgr24 -f framemd5 -
+ffmpeg -v quiet -i .\sample_lossless.avi -pix_fmt bgr24 -f framemd5 -
 
 
 # ============================================================
-# SECTION 11 — FULL END-TO-END DEMO SEQUENCE
-# Run this sequence for a live project demonstration.
+# SECTION 6 — STANDALONE CODECS & ANALYZER
 # ============================================================
 
-# Step 1: Build
-E:\Programs\VisualStudio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe --build build --config Release
+# RLE PackBits on any binary file:
+.\build\Release\ahmc.exe rle-compress   .\input.bin .\input.rle
+.\build\Release\ahmc.exe rle-decompress .\input.rle .\input_rec.bin
+.\build\Release\ahmc.exe rle-verify     .\input.bin .\input_rec.bin
 
-# Step 2: Run all regression tests (C++, Image, Audio, Video)
-.\.venv\Scripts\python.exe scratch\run_all_tests.py
+# Canonical Huffman on any binary file:
+.\build\Release\ahmc.exe huffman-compress   .\input.bin .\input.huff
+.\build\Release\ahmc.exe huffman-decompress .\input.huff .\input_rec.bin
+.\build\Release\ahmc.exe huffman-verify     .\input.bin .\input_rec.bin
 
-# Step 3: Demonstrate image compression
-.\build\Release\ahmc.exe image-analyze  .\sample.bmp
-.\build\Release\ahmc.exe image-compress .\sample.bmp .\sample.ahmc
-.\build\Release\ahmc.exe image-decompress .\sample.ahmc .\sample_recovered.bmp
-.\build\Release\ahmc.exe image-verify   .\sample.bmp .\sample_recovered.bmp
+# Generic Shannon Entropy Analyzer:
+.\build\Release\ahmc.exe analyze .\sample.bin
 
-# Step 4: Demonstrate audio compression
-.\build\Release\ahmc.exe audio-analyze  .\sample.wav
-.\build\Release\ahmc.exe audio-compress .\sample.wav .\sample_audio.ahmc
-.\build\Release\ahmc.exe audio-decompress .\sample_audio.ahmc .\sample_recovered.wav
-.\build\Release\ahmc.exe audio-verify   .\sample.wav .\sample_recovered.wav
 
-# Step 5: Start Flask dashboard for visual demonstration (BMP, PNG, WAV, FLAC, AVI, MP4)
+# ============================================================
+# SECTION 7 — FLASK DASHBOARD (Web Application)
+# ============================================================
+
+# Quick Launch:
+#   .\run.bat  or  .\run.ps1
+
+# Manual Launch:
+# 1. Set up virtual environment
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+
+# 2. Run application
 .\.venv\Scripts\python.exe flask_app\app.py
-# Then open: http://127.0.0.1:5000
+# URL: http://127.0.0.1:5000
+
+
+# ============================================================
+# SECTION 8 — FULL END-TO-END DEMO SEQUENCE
+# ============================================================
+
+# Step 1: Build engine
+.\build.bat
+
+# Step 2: Run all regression tests
+.\test.bat
+
+# Step 3: Launch web UI
+.\run.bat

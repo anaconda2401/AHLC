@@ -211,6 +211,13 @@ bool decompress_audio(const std::string& ahmc_path, const std::string& wav_path)
     std::ifstream in(ahmc_path, std::ios::binary);
     if (!in) { std::cerr << "Audio: cannot open: " << ahmc_path << "\n"; return false; }
 
+    in.seekg(0, std::ios::end);
+    const uint64_t file_len = static_cast<uint64_t>(in.tellg());
+    in.seekg(0, std::ios::beg);
+    if (file_len < 27) {
+        std::cerr << "Audio: file too small for AHLA header.\n"; return false;
+    }
+
     char magic[4] = {};
     in.read(magic, 4);
     if (std::memcmp(magic, AHLA_MAGIC, 4) != 0) {
@@ -234,6 +241,12 @@ bool decompress_audio(const std::string& ahmc_path, const std::string& wav_path)
     audio.bits_per_sample = a_rd16(in);
     audio.total_samples   = a_rd32(in);
 
+    if (audio.format != 1 || audio.channels == 0 || audio.sample_rate == 0 ||
+        (audio.bits_per_sample != 8 && audio.bits_per_sample != 16 &&
+         audio.bits_per_sample != 24 && audio.bits_per_sample != 32)) {
+        std::cerr << "Audio: invalid audio header fields.\n"; return false;
+    }
+
     uint8_t pred = 0;
     in.read(reinterpret_cast<char*>(&pred), 1);
 
@@ -246,9 +259,17 @@ bool decompress_audio(const std::string& ahmc_path, const std::string& wav_path)
     uint32_t orig_pcm  = a_rd32(in);
     uint32_t comp_size = a_rd32(in);
 
+    const uint64_t current_pos = static_cast<uint64_t>(in.tellg());
+    if (current_pos + comp_size > file_len) {
+        std::cerr << "Audio: declared compressed size exceeds file length.\n"; return false;
+    }
+
     std::vector<uint8_t> compressed(comp_size);
     in.read(reinterpret_cast<char*>(compressed.data()),
             static_cast<std::streamsize>(comp_size));
+    if (in.gcount() != static_cast<std::streamsize>(comp_size)) {
+        std::cerr << "Audio: truncated compressed payload.\n"; return false;
+    }
 
     std::vector<uint8_t> residuals;
     if (codec == AUDIO_CODEC_RLE) {

@@ -72,8 +72,8 @@ bool read_bmp(const std::string& path, BMPImage& img)
     if (bi_bit_count != 24 && bi_bit_count != 32) {
         std::cerr << "BMP: only 24-bit and 32-bit supported.\n"; return false;
     }
-    if (bi_width <= 0) {
-        std::cerr << "BMP: invalid width.\n"; return false;
+    if (bi_width <= 0 || bi_height == 0 || bi_width > 65536 || std::abs(bi_height) > 65536) {
+        std::cerr << "BMP: invalid or excessive image dimensions.\n"; return false;
     }
 
     bool top_down = (bi_height < 0);
@@ -82,11 +82,16 @@ bool read_bmp(const std::string& path, BMPImage& img)
     img.bpp    = bi_bit_count;
 
     uint32_t row_bytes = img.row_bytes();
+    uint64_t total_px = static_cast<uint64_t>(img.height) * row_bytes;
+    if (total_px > 512 * 1024 * 1024) {
+        std::cerr << "BMP: image data exceeds maximum 512MB limit.\n"; return false;
+    }
+
     // BMP rows are padded to 4-byte boundaries in the file.
     uint32_t file_row_stride = ((row_bytes + 3) / 4) * 4;
     uint32_t padding         = file_row_stride - row_bytes;
 
-    img.pixels.resize(img.height * row_bytes);
+    img.pixels.resize(static_cast<size_t>(total_px));
 
     // Seek to pixel data start.
     f.seekg(static_cast<std::streamoff>(bf_off_bits), std::ios::beg);

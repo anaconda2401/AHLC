@@ -108,9 +108,9 @@ def save_experiment(session_id: str, filename: str, data: dict,
                     recovered_path: str) -> int:
     """Insert a new experiment row and return its id."""
     media = data.get("media_type", "unknown")
-    playback_p = data.get("playback_path", compressed_path)
+    playback_p = data.get("playback_path", recovered_path)
     playback_sz = data.get("playback_size", data.get("compressed_size", 0))
-    lossless_p = data.get("lossless_path", compressed_path)
+    lossless_p = data.get("lossless_path", recovered_path)
     with _conn() as con:
         cur = con.execute("""
         INSERT INTO experiments (

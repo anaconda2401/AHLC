@@ -10,7 +10,7 @@ import subprocess
 import shutil
 from pathlib import Path
 
-PROJECT_ROOT = Path(r"d:\projects\compression\AHLC").resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "flask_app"))
 
 import app as flask_app_module

@@ -32,6 +32,7 @@ from flask_app.ahmc_runner import (
     run_video_teabps,
     run_all_tests,
     probe_video,
+    get_ffmpeg_path,
     AHMC_EXE,
 )
 from flask_app.database import init_db, save_experiment, get_experiment
@@ -45,6 +46,25 @@ class TestVideoTEABPSFull(unittest.TestCase):
         cls.test_dir.mkdir(parents=True, exist_ok=True)
         cls.avi_sample = PROJECT_ROOT / "scratch" / "video_test_artifacts" / "uncompressed_test.avi"
         cls.mp4_sample = PROJECT_ROOT / "scratch" / "video_test_artifacts" / "h264_test.mp4"
+        ffmpeg_bin = get_ffmpeg_path()
+        if not cls.avi_sample.exists():
+            cls.avi_sample = cls.test_dir / "uncompressed_test.avi"
+            if not cls.avi_sample.exists():
+                subprocess.run([
+                    ffmpeg_bin, "-y",
+                    "-f", "lavfi", "-i", "testsrc=duration=0.5:size=64x64:rate=10",
+                    "-c:v", "rawvideo", "-pix_fmt", "bgr24", "-an",
+                    str(cls.avi_sample)
+                ], capture_output=True)
+        if not cls.mp4_sample.exists():
+            cls.mp4_sample = cls.test_dir / "h264_test.mp4"
+            if not cls.mp4_sample.exists():
+                subprocess.run([
+                    ffmpeg_bin, "-y",
+                    "-f", "lavfi", "-i", "testsrc=duration=0.5:size=64x64:rate=10",
+                    "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p", "-an",
+                    str(cls.mp4_sample)
+                ], capture_output=True)
 
     @classmethod
     def tearDownClass(cls):

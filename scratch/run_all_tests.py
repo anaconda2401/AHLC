@@ -6,13 +6,35 @@ Executes:
 2. Image Compression Test Suite (BMP & PNG)
 3. Audio Compression Test Suite (WAV & FLAC: all 10 requirements)
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(r"d:\projects\compression\AHLC").resolve()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PYTHON_EXE = sys.executable
-AHMC_EXE = PROJECT_ROOT / "build" / "Release" / "ahmc.exe"
+
+
+def get_ahmc_exe() -> Path:
+    env_p = os.environ.get("AHMC_EXE")
+    if env_p and Path(env_p).is_file():
+        return Path(env_p)
+    candidates = [
+        PROJECT_ROOT / "build" / "Release" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "Debug" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "RelWithDebInfo" / "ahmc.exe",
+        PROJECT_ROOT / "build" / "Release" / "ahmc",
+        PROJECT_ROOT / "build" / "ahmc",
+        PROJECT_ROOT / "build" / "Debug" / "ahmc",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return PROJECT_ROOT / "build" / "Release" / "ahmc.exe"
+
+
+AHMC_EXE = get_ahmc_exe()
 
 
 def run_cmd(args, desc):
